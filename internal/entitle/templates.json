@@ -1,0 +1,217 @@
+[
+  {
+    "id": "agency",
+    "name": "Agency and services",
+    "summary": "Clients, projects and timesheets. The words and defaults the product starts with, plus a review step and an agency sales pipeline.",
+    "apps": [
+      "crm",
+      "sales",
+      "pms",
+      "hr",
+      "accounting"
+    ],
+    "features": [
+      "clients.documents",
+      "crm.contacts",
+      "crm.leads",
+      "crm.followups",
+      "crm.meetings",
+      "crm.deals",
+      "sales.products",
+      "sales.quotes",
+      "sales.invoices",
+      "sales.recurring",
+      "sales.reports",
+      "pms.tasks",
+      "hr.attendance",
+      "hr.leave",
+      "hr.timesheets",
+      "accounting.receipts",
+      "accounting.expenses",
+      "accounting.reports"
+    ],
+    "labels": {
+      "client": {
+        "singular": "Client",
+        "plural": "Clients",
+        "slug": ""
+      },
+      "deal": {
+        "singular": "Deal",
+        "plural": "Deals",
+        "slug": ""
+      },
+      "lead": {
+        "singular": "Lead",
+        "plural": "Leads",
+        "slug": ""
+      },
+      "order": {
+        "singular": "Order",
+        "plural": "Orders",
+        "slug": ""
+      },
+      "project": {
+        "singular": "Project",
+        "plural": "Projects",
+        "slug": ""
+      },
+      "quote": {
+        "singular": "Quote",
+        "plural": "Quotes",
+        "slug": ""
+      },
+      "task": {
+        "singular": "Task",
+        "plural": "Tasks",
+        "slug": ""
+      }
+    },
+    "fields": 2,
+    "statuses": 1,
+    "pipelines": 1
+  },
+  {
+    "id": "clinic",
+    "name": "Clinic",
+    "summary": "Patients and cases. Patient details that only managers see, a visit flow for cases, and a treatment plan pipeline.",
+    "apps": [
+      "crm",
+      "sales",
+      "pms",
+      "hr",
+      "accounting"
+    ],
+    "features": [
+      "clients.documents",
+      "crm.contacts",
+      "crm.leads",
+      "crm.followups",
+      "crm.meetings",
+      "sales.products",
+      "sales.invoices",
+      "sales.reports",
+      "pms.tasks",
+      "hr.attendance",
+      "hr.shifts",
+      "hr.leave",
+      "hr.payroll",
+      "accounting.receipts",
+      "accounting.expenses",
+      "accounting.reports"
+    ],
+    "labels": {
+      "client": {
+        "singular": "Patient",
+        "plural": "Patients",
+        "slug": ""
+      },
+      "deal": {
+        "singular": "Treatment plan",
+        "plural": "Treatment plans",
+        "slug": ""
+      },
+      "lead": {
+        "singular": "Enquiry",
+        "plural": "Enquiries",
+        "slug": ""
+      },
+      "order": {
+        "singular": "Order",
+        "plural": "Orders",
+        "slug": ""
+      },
+      "project": {
+        "singular": "Case",
+        "plural": "Cases",
+        "slug": ""
+      },
+      "quote": {
+        "singular": "Quote",
+        "plural": "Quotes",
+        "slug": ""
+      },
+      "task": {
+        "singular": "Task",
+        "plural": "Tasks",
+        "slug": ""
+      }
+    },
+    "fields": 7,
+    "statuses": 7,
+    "pipelines": 1
+  },
+  {
+    "id": "trades",
+    "name": "Trades and field service",
+    "summary": "Customers, jobs and work orders. Site details on customers and jobs, a job flow from booking to invoice, and a pipeline for commercial bids.",
+    "apps": [
+      "crm",
+      "sales",
+      "pms",
+      "inventory",
+      "hr",
+      "accounting"
+    ],
+    "features": [
+      "clients.documents",
+      "crm.contacts",
+      "crm.leads",
+      "crm.followups",
+      "sales.products",
+      "sales.quotes",
+      "sales.orders",
+      "sales.invoices",
+      "sales.recurring",
+      "pms.tasks",
+      "inventory.stock",
+      "inventory.purchasing",
+      "hr.shifts",
+      "hr.timesheets",
+      "hr.payroll",
+      "accounting.receipts",
+      "accounting.expenses",
+      "accounting.reports"
+    ],
+    "labels": {
+      "client": {
+        "singular": "Customer",
+        "plural": "Customers",
+        "slug": ""
+      },
+      "deal": {
+        "singular": "Opportunity",
+        "plural": "Opportunities",
+        "slug": ""
+      },
+      "lead": {
+        "singular": "Enquiry",
+        "plural": "Enquiries",
+        "slug": ""
+      },
+      "order": {
+        "singular": "Work order",
+        "plural": "Work orders",
+        "slug": ""
+      },
+      "project": {
+        "singular": "Job",
+        "plural": "Jobs",
+        "slug": ""
+      },
+      "quote": {
+        "singular": "Quote",
+        "plural": "Quotes",
+        "slug": ""
+      },
+      "task": {
+        "singular": "Task",
+        "plural": "Tasks",
+        "slug": ""
+      }
+    },
+    "fields": 6,
+    "statuses": 7,
+    "pipelines": 1
+  }
+]

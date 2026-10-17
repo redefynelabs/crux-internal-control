@@ -1,0 +1,39 @@
+# What a demo host needs, for trying the whole flow on a laptop: Postgres, Redis and Traefik on the two networks the
+# control plane attaches demos to. Plain HTTP; demos open at http://<slug>.demo.localhost.
+#   make dev-up
+name: cp-dev
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports: ["5434:5432"]
+    networks: [erp-data]
+    volumes: [pgdata:/var/lib/postgresql]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    networks: [erp-data]
+
+  traefik:
+    image: traefik:v3.6
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+    ports: ["80:80"]
+    networks: [erp-proxy]
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
+
+networks:
+  erp-data: { name: erp-data }
+  erp-proxy: { name: erp-proxy }
+
+volumes:
+  pgdata:

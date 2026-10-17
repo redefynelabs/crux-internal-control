@@ -1,0 +1,113 @@
+# The control plane and the demo host on ONE server: Traefik (HTTPS), Postgres, Redis, the control plane API and its admin
+# app. Demos are started from here by the control plane as more containers on the same Docker, on the erp-data and
+# erp-proxy networks. Settings come from .env (copy .env.example). Needs Docker with the compose plugin.
+name: erp-host
+
+services:
+  traefik:
+    image: traefik:v3.6
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      # One wildcard certificate for the admin and API addresses and every demo, so a demo never asks Let's Encrypt for
+      # a certificate of its own (that would hit its limits within a day). It needs a DNS challenge, so the DNS host's
+      # credentials go in .env (see ACME_DNS_PROVIDER).
+      - --entrypoints.websecure.http.tls.certresolver=le
+      - --entrypoints.websecure.http.tls.domains[0].main=${BASE_DOMAIN}
+      - --entrypoints.websecure.http.tls.domains[0].sans=*.${BASE_DOMAIN},*.demo.${BASE_DOMAIN}
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.dnschallenge.provider=${ACME_DNS_PROVIDER}
+    env_file: [.env]
+    ports: ["80:80", "443:443"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+    networks: [erp-proxy]
+
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    # Many demos share this server: each opens a few connections, so allow more than the default 100.
+    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=256MB"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${PG_ADMIN_PASSWORD}
+      CP_DB_PASSWORD: ${CP_DB_PASSWORD}
+      DEMO_ROLE_PASSWORD: ${DEMO_ROLE_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    # Loopback only: for psql and the template script on this host. Nothing outside the server can reach it.
+    ports: ["127.0.0.1:5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      retries: 20
+    networks: [erp-data]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [erp-data]
+
+  controlplane:
+    image: ${CONTROLPLANE_IMAGE}
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      CP_DATABASE_URL: postgres://controlplane:${CP_DB_PASSWORD}@postgres:5432/controlplane?sslmode=disable
+      CP_PG_ADMIN_URL: postgres://postgres:${PG_ADMIN_PASSWORD}@postgres:5432/postgres?sslmode=disable
+      CP_PG_HOST: postgres:5432
+      CP_PG_USER: erp_demo
+      CP_PG_PASSWORD: ${DEMO_ROLE_PASSWORD}
+      CP_REDIS_URL: redis://redis:6379/1
+      CP_DEMO_DOMAIN: demo.${BASE_DOMAIN}
+      CP_ADMIN_URL: https://admin.${BASE_DOMAIN}
+      CP_TRUST_PROXY: "true"
+      # The wildcard certificate is set on the entrypoint, so demos carry no resolver of their own.
+      CP_TRAEFIK_CERT_RESOLVER: none
+      CP_DEMO_SCHEME: https
+      CP_TRAEFIK_ENTRYPOINT: websecure
+      CP_ENTITLEMENT_KEY_FILE: /keys/entitlement.key
+    # The control plane starts demos with the docker command line, through the host's Docker socket (root-equivalent).
+    # Its image runs as a non-root user, who must be in the group that owns the socket.
+    group_add: ["${DOCKER_GID}"]
+    # ./keys holds the entitlement signing key (see README: "Entitlements"). It is mounted read-only, and kept out of
+    # the database and its backups.
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock", "./keys:/keys:ro"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=erp-proxy
+      - traefik.http.routers.cp-api.rule=Host(`api.${BASE_DOMAIN}`)
+      - traefik.http.routers.cp-api.entrypoints=websecure
+      - traefik.http.services.cp-api.loadbalancer.server.port=8090
+    networks: [erp-data, erp-proxy]
+
+  admin:
+    image: ${ADMIN_IMAGE}
+    restart: unless-stopped
+    environment:
+      CONTROL_PLANE_URL: http://controlplane:8090
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=erp-proxy
+      - traefik.http.routers.cp-admin.rule=Host(`admin.${BASE_DOMAIN}`)
+      - traefik.http.routers.cp-admin.entrypoints=websecure
+      - traefik.http.services.cp-admin.loadbalancer.server.port=3100
+    networks: [erp-data, erp-proxy]
+
+networks:
+  erp-data: { name: erp-data }
+  erp-proxy: { name: erp-proxy }
+
+volumes:
+  pgdata:
+  letsencrypt:

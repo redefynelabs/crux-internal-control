@@ -334,11 +334,18 @@ func (a *API) sendLeadEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	subject, body := strings.TrimSpace(in.Subject), strings.TrimSpace(in.Body)
+	// A designed template carries its own content; what the person types is then an optional personal note above it.
+	var designed *store.Template
+	if in.TemplateID != "" {
+		if t, err := a.store.TemplateByID(r.Context(), in.TemplateID); err == nil && t.Format == mail.FormatHTML {
+			designed = &t
+		}
+	}
 	switch {
 	case subject == "" || len(subject) > 200:
 		invalid(w, "subject", "Enter a subject up to 200 characters")
 		return
-	case body == "" || len(body) > 20000:
+	case designed == nil && (body == "" || len(body) > 20000), len(body) > 20000:
 		invalid(w, "body", "Write a message")
 		return
 	}
@@ -367,8 +374,14 @@ func (a *API) sendLeadEmail(w http.ResponseWriter, r *http.Request) {
 	if p := who(r); p.User.Name != "" {
 		owner = p.User.Name
 	}
-	vars := mail.Vars(l.Name, l.Company, demoURL, owner, ms.Signature)
-	e, err := a.mail.Queue(r.Context(), l.ID, who(r).User.ID, l.Email, mail.Render(subject, vars), mail.Render(body, vars), time.Now())
+	vars := a.mail.Enrich(r.Context(), mail.Vars(l.Name, l.Company, demoURL, owner, ms.Signature))
+	var rendered mail.Rendered
+	if designed != nil {
+		rendered = a.mail.Composer().Compose(mail.FormatHTML, subject, mail.NoteHTML(body)+designed.Body, vars)
+	} else {
+		rendered = mail.Rendered{Subject: mail.Render(subject, vars), Text: mail.Render(body, vars)}
+	}
+	e, err := a.mail.QueueRendered(r.Context(), l.ID, who(r).User.ID, l.Email, rendered, time.Now())
 	if errors.Is(err, mail.ErrNotConfigured) {
 		writeError(w, 409, "email_not_configured", "Email is not set up yet. An admin can do it in Settings")
 		return
@@ -526,6 +539,8 @@ type templateJSON struct {
 	Name    string `json:"name"`
 	Subject string `json:"subject"`
 	Body    string `json:"body"`
+	// Format is "text" (the default) or "html".
+	Format string `json:"format"`
 }
 
 func (a *API) putTemplate(w http.ResponseWriter, r *http.Request) {
@@ -533,7 +548,12 @@ func (a *API) putTemplate(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
+	if in.Format == "" {
+		in.Format = mail.FormatText
+	}
 	switch {
+	case in.Format != mail.FormatText && in.Format != mail.FormatHTML:
+		invalid(w, "format", "Choose plain text or designed HTML")
 	case strings.TrimSpace(in.Name) == "" || len(in.Name) > 120:
 		invalid(w, "name", "Enter a name")
 	case strings.TrimSpace(in.Subject) == "" || len(in.Subject) > 200:
@@ -541,7 +561,7 @@ func (a *API) putTemplate(w http.ResponseWriter, r *http.Request) {
 	case strings.TrimSpace(in.Body) == "" || len(in.Body) > 20000:
 		invalid(w, "body", "Write the message")
 	default:
-		t, err := a.store.UpdateTemplate(r.Context(), r.PathValue("id"), strings.TrimSpace(in.Name), strings.TrimSpace(in.Subject), in.Body)
+		t, err := a.store.UpdateTemplate(r.Context(), r.PathValue("id"), strings.TrimSpace(in.Name), strings.TrimSpace(in.Subject), in.Body, in.Format)
 		if errors.Is(err, store.ErrNotFound) || isBadID(err) {
 			writeError(w, 404, "not_found", "No such template")
 			return
@@ -552,6 +572,63 @@ func (a *API) putTemplate(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, 200, t)
 	}
+}
+
+type previewJSON struct {
+	Format  string `json:"format"`
+	Subject string `json:"subject"`
+	Body    string `json:"body"`
+}
+
+func (a *API) composeSample(r *http.Request, in previewJSON) mail.Rendered {
+	if in.Format != mail.FormatHTML {
+		in.Format = mail.FormatText
+	}
+	return a.mail.Composer().Compose(in.Format, in.Subject, in.Body, a.mail.Enrich(r.Context(), mail.SampleVars()))
+}
+
+// previewTemplate renders a template, as typed and not yet saved, with sample values, so the editor can show it.
+func (a *API) previewTemplate(w http.ResponseWriter, r *http.Request) {
+	var in previewJSON
+	if !decode(w, r, &in) {
+		return
+	}
+	if len(in.Body) > 20000 || len(in.Subject) > 200 {
+		invalid(w, "body", "Too long")
+		return
+	}
+	out := a.composeSample(r, in)
+	writeJSON(w, 200, map[string]string{"subject": out.Subject, "text": out.Text, "html": out.HTML})
+}
+
+// testTemplate sends a template, with sample values, to the person asking, to see it in a real mail app.
+func (a *API) testTemplate(w http.ResponseWriter, r *http.Request) {
+	var in previewJSON
+	if !decode(w, r, &in) {
+		return
+	}
+	if len(in.Body) > 20000 || len(in.Subject) > 200 {
+		invalid(w, "body", "Too long")
+		return
+	}
+	out := a.composeSample(r, in)
+	err := a.mail.SendNowHTML(r.Context(), who(r).User.Email, "[Test] "+out.Subject, out.Text, out.HTML)
+	if errors.Is(err, mail.ErrNotConfigured) {
+		writeError(w, 409, "email_not_configured", "Email is not set up yet. Set it up in Settings first")
+		return
+	}
+	if err != nil {
+		writeError(w, 502, "email_failed", err.Error())
+		return
+	}
+	writeJSON(w, 200, map[string]string{"sent_to": who(r).User.Email})
+}
+
+// brandLogo serves the logo the designed emails link to. It is public (mail apps fetch it without signing in) and cached.
+func (a *API) brandLogo(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	_, _ = w.Write(mail.LogoPNG())
 }
 
 // emailView is the email settings as a browser sees them: never the password.

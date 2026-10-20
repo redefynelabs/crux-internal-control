@@ -92,7 +92,15 @@ export interface Template {
   name: string;
   subject: string;
   body: string;
+  /** "text" is plain text; "html" holds the message content, which the Crux layout (logo, card, footer) wraps when it is sent. */
+  format: "text" | "html";
   updated_at: string;
+}
+
+export interface TemplatePreview {
+  subject: string;
+  html: string;
+  text: string;
 }
 
 export interface EmailSettings {

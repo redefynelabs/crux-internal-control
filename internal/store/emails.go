@@ -14,10 +14,12 @@ const (
 
 // Email is a message sent, or waiting to be sent, to a lead.
 type Email struct {
-	ID         string     `json:"id"`
-	LeadID     *string    `json:"lead_id"`
-	Subject    string     `json:"subject"`
-	Body       string     `json:"body"`
+	ID      string  `json:"id"`
+	LeadID  *string `json:"lead_id"`
+	Subject string  `json:"subject"`
+	Body    string  `json:"body"`
+	// BodyHTML is the designed version of a message, empty for plain text. It is not sent to browsers; Body is its text.
+	BodyHTML   string     `json:"-"`
 	ToEmail    string     `json:"to_email"`
 	Status     string     `json:"status"`
 	Error      string     `json:"error"`
@@ -28,12 +30,12 @@ type Email struct {
 }
 
 const emailSelect = `
-	SELECT e.id, e.lead_id, e.subject, e.body, e.to_email, e.status, e.error, COALESCE(u.name, ''), e.attempts, e.created_at, e.sent_at
+	SELECT e.id, e.lead_id, e.subject, e.body, e.body_html, e.to_email, e.status, e.error, COALESCE(u.name, ''), e.attempts, e.created_at, e.sent_at
 	FROM emails e LEFT JOIN users u ON u.id = e.sent_by`
 
 func scanEmail(r rowScanner) (Email, error) {
 	var e Email
-	err := r.Scan(&e.ID, &e.LeadID, &e.Subject, &e.Body, &e.ToEmail, &e.Status, &e.Error, &e.SentByName, &e.Attempts, &e.CreatedAt, &e.SentAt)
+	err := r.Scan(&e.ID, &e.LeadID, &e.Subject, &e.Body, &e.BodyHTML, &e.ToEmail, &e.Status, &e.Error, &e.SentByName, &e.Attempts, &e.CreatedAt, &e.SentAt)
 	return e, err
 }
 
@@ -42,6 +44,16 @@ func (s *Store) QueueEmail(ctx context.Context, leadID, sentBy, to, subject, bod
 	var id string
 	if err := s.pool.QueryRow(ctx, `INSERT INTO emails (lead_id, sent_by, to_email, subject, body, send_after) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
 		nullable(leadID), nullable(sentBy), to, subject, body, sendAfter).Scan(&id); err != nil {
+		return Email{}, err
+	}
+	return scanEmail(s.pool.QueryRow(ctx, emailSelect+` WHERE e.id = $1`, id))
+}
+
+// QueueEmailHTML is QueueEmail for a designed message: body is its plain text, html the designed version.
+func (s *Store) QueueEmailHTML(ctx context.Context, leadID, sentBy, to, subject, body, html string, sendAfter time.Time) (Email, error) {
+	var id string
+	if err := s.pool.QueryRow(ctx, `INSERT INTO emails (lead_id, sent_by, to_email, subject, body, body_html, send_after) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+		nullable(leadID), nullable(sentBy), to, subject, body, html, sendAfter).Scan(&id); err != nil {
 		return Email{}, err
 	}
 	return scanEmail(s.pool.QueryRow(ctx, emailSelect+` WHERE e.id = $1`, id))
@@ -73,7 +85,7 @@ func (s *Store) ClaimDueEmails(ctx context.Context, limit int) ([]Email, error) 
 		)
 		UPDATE emails e SET attempts = e.attempts + 1, send_after = now() + interval '10 minutes'
 		FROM due WHERE e.id = due.id
-		RETURNING e.id, e.lead_id, e.subject, e.body, e.to_email, e.status, e.error, COALESCE((SELECT name FROM users WHERE id = e.sent_by), ''), e.attempts, e.created_at, e.sent_at`, limit)
+		RETURNING e.id, e.lead_id, e.subject, e.body, e.body_html, e.to_email, e.status, e.error, COALESCE((SELECT name FROM users WHERE id = e.sent_by), ''), e.attempts, e.created_at, e.sent_at`, limit)
 	if err != nil {
 		return nil, err
 	}

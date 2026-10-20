@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"log/slog"
 	"mime"
+	"mime/quotedprintable"
 	"net"
 	"net/mail"
 	"net/smtp"
@@ -78,7 +79,8 @@ func (s Settings) Validate() map[string]string {
 
 // Sender delivers one message. The real one speaks SMTP; tests use a fake.
 type Sender interface {
-	Send(ctx context.Context, s Settings, password, to, subject, body string) error
+	// html is empty for a plain-text message; otherwise the message carries both parts and the mail app picks one.
+	Send(ctx context.Context, s Settings, password, to, subject, text, html string) error
 }
 
 // Service sends and queues mail.
@@ -87,12 +89,47 @@ type Service struct {
 	key    [32]byte
 	log    *slog.Logger
 	sender Sender
+	logo   string
+	site   string
 }
 
 // New returns the service. secret is any long string from the environment; the encryption key is derived from it.
 func New(st *store.Store, secret string, log *slog.Logger) *Service {
 	return &Service{store: st, key: sha256.Sum256([]byte("cp-mail:" + secret)), log: log, sender: SMTP{}}
 }
+
+// WithPublicURL tells designed emails where the control plane is reachable, so they can link to the logo it serves.
+func (m *Service) WithPublicURL(u string) *Service {
+	if u = strings.TrimRight(strings.TrimSpace(u), "/"); u != "" {
+		m.logo = u + "/v1/brand/logo.png"
+	}
+	return m
+}
+
+// WithSiteURL sets the marketing site's address, available to templates as {{site_url}} (for "start a demo" and "pricing" links).
+func (m *Service) WithSiteURL(u string) *Service {
+	m.site = strings.TrimRight(strings.TrimSpace(u), "/")
+	return m
+}
+
+// Enrich adds the values every template can use that do not depend on the person: {{site_url}} and {{sender_email}} (where
+// replies go). Values already in vars win.
+func (m *Service) Enrich(ctx context.Context, vars map[string]string) map[string]string {
+	if vars == nil {
+		vars = map[string]string{}
+	}
+	if _, ok := vars["site_url"]; !ok {
+		vars["site_url"] = m.site
+	}
+	if _, ok := vars["sender_email"]; !ok {
+		s, _ := m.Settings(ctx)
+		vars["sender_email"] = firstNonEmpty(s.ReplyTo, s.FromEmail)
+	}
+	return vars
+}
+
+// Composer returns the one that renders templates with this service's logo.
+func (m *Service) Composer() Composer { return Composer{LogoURL: m.logo} }
 
 // WithSender replaces the SMTP sender (tests).
 func (m *Service) WithSender(s Sender) *Service { m.sender = s; return m }
@@ -175,6 +212,11 @@ func (m *Service) Ready(ctx context.Context) bool {
 
 // SendNow sends one message straight away with the saved settings (used by the test button).
 func (m *Service) SendNow(ctx context.Context, to, subject, body string) error {
+	return m.SendNowHTML(ctx, to, subject, body, "")
+}
+
+// SendNowHTML is SendNow for a designed message that also has an HTML part.
+func (m *Service) SendNowHTML(ctx context.Context, to, subject, text, html string) error {
 	s, err := m.Settings(ctx)
 	if err != nil {
 		return err
@@ -186,15 +228,7 @@ func (m *Service) SendNow(ctx context.Context, to, subject, body string) error {
 	if err != nil {
 		return err
 	}
-	return m.sender.Send(ctx, s, pw, to, subject, body)
-}
-
-// Render fills {{placeholders}} in text. Unknown placeholders are left as they are.
-func Render(text string, vars map[string]string) string {
-	for k, v := range vars {
-		text = strings.ReplaceAll(text, "{{"+k+"}}", v)
-	}
-	return text
+	return m.sender.Send(ctx, s, pw, to, subject, text, html)
 }
 
 // Vars builds the placeholder values for a lead.
@@ -214,6 +248,44 @@ func (m *Service) Queue(ctx context.Context, leadID, sentBy, to, subject, body s
 		return store.Email{}, ErrNotConfigured
 	}
 	return m.store.QueueEmail(ctx, leadID, sentBy, to, subject, body, after)
+}
+
+// QueueHTML is Queue for a designed message: text is what shows in the lead's history and in plain-text mail apps, html
+// is the designed version.
+func (m *Service) QueueHTML(ctx context.Context, leadID, sentBy, to, subject, text, html string, after time.Time) (store.Email, error) {
+	if !m.Ready(ctx) {
+		return store.Email{}, ErrNotConfigured
+	}
+	return m.store.QueueEmailHTML(ctx, leadID, sentBy, to, subject, text, html, after)
+}
+
+// QueueRendered queues a composed message, designed or plain.
+func (m *Service) QueueRendered(ctx context.Context, leadID, sentBy, to string, r Rendered, after time.Time) (store.Email, error) {
+	return m.QueueHTML(ctx, leadID, sentBy, to, r.Subject, r.Text, r.HTML, after)
+}
+
+// ErrNoTemplate is returned by ComposeTemplate when the template does not exist.
+var ErrNoTemplate = errors.New("no such email template")
+
+// ComposeTemplate renders the template with this key for one person. vars should come from Vars, plus any extra values.
+func (m *Service) ComposeTemplate(ctx context.Context, key string, vars map[string]string) (Rendered, error) {
+	t, err := m.store.TemplateByKey(ctx, key)
+	if errors.Is(err, store.ErrNotFound) {
+		return Rendered{}, ErrNoTemplate
+	}
+	if err != nil {
+		return Rendered{}, err
+	}
+	return m.Composer().Compose(t.Format, t.Subject, t.Body, m.Enrich(ctx, vars)), nil
+}
+
+func firstNonEmpty(v ...string) string {
+	for _, s := range v {
+		if s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 // RunWorker sends queued mail until ctx ends.
@@ -251,7 +323,7 @@ func (m *Service) Work(ctx context.Context) {
 	for _, e := range due {
 		err := perr
 		if err == nil {
-			err = m.sender.Send(ctx, s, pw, e.ToEmail, e.Subject, e.Body)
+			err = m.sender.Send(ctx, s, pw, e.ToEmail, e.Subject, e.Body, e.BodyHTML)
 		}
 		if err == nil {
 			_ = m.store.MarkEmailSent(ctx, e.ID)
@@ -278,7 +350,7 @@ func clean(s string) string {
 }
 
 // Send implements Sender. Errors say what failed without echoing the password.
-func (SMTP) Send(ctx context.Context, s Settings, password, to, subject, body string) error {
+func (SMTP) Send(ctx context.Context, s Settings, password, to, subject, text, html string) error {
 	if _, err := mail.ParseAddress(to); err != nil {
 		return errors.New("the recipient address is not valid")
 	}
@@ -325,7 +397,7 @@ func (SMTP) Send(ctx context.Context, s Settings, password, to, subject, body st
 	if err != nil {
 		return err
 	}
-	if _, err := w.Write(build(from, s.ReplyTo, to, subject, body)); err != nil {
+	if _, err := w.Write(build(from, s.ReplyTo, to, subject, text, html)); err != nil {
 		return err
 	}
 	if err := w.Close(); err != nil {
@@ -342,8 +414,9 @@ func unwrapNet(err error) error {
 	return err
 }
 
-// build makes a plain-text UTF-8 message. Header values are stripped of line breaks, which closes header injection.
-func build(from mail.Address, replyTo, to, subject, body string) []byte {
+// build makes a UTF-8 message: plain text, or (with html) multipart/alternative with both parts. Header values are
+// stripped of line breaks, which closes header injection.
+func build(from mail.Address, replyTo, to, subject, text, html string) []byte {
 	var b strings.Builder
 	h := func(k, v string) { b.WriteString(k + ": " + v + "\r\n") }
 	h("From", from.String())
@@ -361,13 +434,37 @@ func build(from mail.Address, replyTo, to, subject, body string) []byte {
 	}
 	h("Message-ID", fmt.Sprintf("<%x@%s>", id, domain))
 	h("MIME-Version", "1.0")
-	h("Content-Type", "text/plain; charset=utf-8")
-	h("Content-Transfer-Encoding", "8bit")
+	if html == "" {
+		h("Content-Type", "text/plain; charset=utf-8")
+		h("Content-Transfer-Encoding", "8bit")
+		b.WriteString("\r\n")
+		b.WriteString(strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\n", "\r\n"))
+		b.WriteString("\r\n")
+		return []byte(b.String())
+	}
+	boundary := fmt.Sprintf("=_alt_%x", id)
+	h("Content-Type", `multipart/alternative; boundary="`+boundary+`"`)
 	b.WriteString("\r\n")
-	b.WriteString(strings.ReplaceAll(strings.ReplaceAll(body, "\r\n", "\n"), "\n", "\r\n"))
-	b.WriteString("\r\n")
+	part := func(ctype, body string) {
+		b.WriteString("--" + boundary + "\r\n")
+		b.WriteString("Content-Type: " + ctype + "; charset=utf-8\r\n")
+		b.WriteString("Content-Transfer-Encoding: quoted-printable\r\n\r\n")
+		w := quotedprintable.NewWriter(&qpBuf{&b})
+		_, _ = w.Write([]byte(strings.ReplaceAll(body, "\r\n", "\n")))
+		_ = w.Close()
+		b.WriteString("\r\n")
+	}
+	// The plain part first and the richest last: mail apps show the last part they understand.
+	part("text/plain", text)
+	part("text/html", html)
+	b.WriteString("--" + boundary + "--\r\n")
 	return []byte(b.String())
 }
+
+// qpBuf lets the quoted-printable writer append to the message being built.
+type qpBuf struct{ b *strings.Builder }
+
+func (q *qpBuf) Write(p []byte) (int, error) { return q.b.Write(p) }
 
 // loginAuth tries PLAIN, which nearly every server accepts; it refuses to send a password over an unencrypted link.
 type loginAuth struct {

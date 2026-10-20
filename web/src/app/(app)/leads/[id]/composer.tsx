@@ -68,6 +68,8 @@ function EmailForm({ lead, me, templates, demoUrl, isAdmin }: { lead: Lead; me: 
   const [templateId, setTemplateId] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  // A designed template is sent as the Crux email; what is typed here is then a personal note above it.
+  const designed = templates.find((x) => x.id === templateId)?.format === "html";
   const [state, action] = useActionState<FormState, FormData>(async (prev, form) => {
     const out = await sendEmail(lead.id, prev, form);
     if (out.saved) {
@@ -84,7 +86,7 @@ function EmailForm({ lead, me, templates, demoUrl, isAdmin }: { lead: Lead; me: 
     const t = templates.find((x) => x.id === id);
     if (t) {
       setSubject(fill(t.subject, vars));
-      setBody(fill(t.body, vars));
+      setBody(t.format === "html" ? "" : fill(t.body, vars));
     }
   };
   return (
@@ -94,12 +96,17 @@ function EmailForm({ lead, me, templates, demoUrl, isAdmin }: { lead: Lead; me: 
       <Field id="template" label="Start from a template">
         <Select id="template" value={templateId} onChange={(e) => pick(e.target.value)}>
           <option value="">Blank</option>
-          {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          {templates.map((t) => <option key={t.id} value={t.id}>{t.name}{t.format === "html" ? " (designed)" : ""}</option>)}
         </Select>
       </Field>
       <Field id="subject" label="Subject" error={f.subject}><Input id="subject" name="subject" value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={200} required /></Field>
-      <Field id="body" label="Message" error={f.body} hint="Your signature is added at the end.">
-        <Textarea id="body" name="body" value={body} onChange={(e) => setBody(e.target.value)} className="min-h-44" maxLength={20000} required />
+      <Field
+        id="body"
+        label={designed ? "Personal note (optional)" : "Message"}
+        error={f.body}
+        hint={designed ? "This is a designed email with the Crux logo. Your note goes above it; the rest comes from the template." : "Your signature is added at the end."}
+      >
+        <Textarea id="body" name="body" value={body} onChange={(e) => setBody(e.target.value)} className={designed ? "min-h-24" : "min-h-44"} maxLength={20000} required={!designed} placeholder={designed ? "For example: Saw you opened the demo twice, happy to walk you through it." : undefined} />
       </Field>
       <div className="flex flex-wrap items-center gap-3">
         <SubmitButton pending="Sending…">Send email</SubmitButton>

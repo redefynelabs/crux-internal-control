@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/redefynelabs/erp-control-plane/internal/mail"
 	"github.com/redefynelabs/erp-control-plane/internal/store"
 )
 
@@ -150,8 +151,7 @@ func (s *Service) startQueued(ctx context.Context, d store.Demo) bool {
 	url, err := s.provision(ctx, d, d.ExpiresAt, lead.Email, password, qr.Modules)
 	if err == nil {
 		// The login goes by mail only; if that cannot be queued the demo is useless to the visitor.
-		subject, body := readyMail(lead.Name, url, lead.Email, password, d.ExpiresAt, s.cfg.TTL)
-		_, err = s.mailer.Queue(ctx, lead.ID, "", lead.Email, subject, body, s.now())
+		err = s.sendReady(ctx, lead, url, password, d.ExpiresAt)
 	}
 	if err == nil {
 		err = s.store.MarkDemoActive(ctx, d.ID, url)
@@ -205,14 +205,35 @@ func (s *Service) expireQueued(ctx context.Context) {
 	}
 }
 
+// apologise tells a visitor their demo did not start. The wording is the editable template demo_queue_sorry.
 func (s *Service) apologise(ctx context.Context, l store.Lead, subject string) {
 	if l.Email == "" || s.mailer == nil || !s.mailer.Ready(ctx) {
 		return
 	}
-	body := fmt.Sprintf("Hi %s,\n\nSorry, we could not fit your demo in this time. Please ask for a new demo on our website any time; it starts straight away when a room is free.\n\nIf you would rather talk to a person, just reply to this email.\n\nThanks for your patience.\n", firstName(l.Name))
-	if _, err := s.mailer.Queue(ctx, l.ID, "", l.Email, subject, body, s.now()); err != nil {
+	fallback := mail.Rendered{Subject: subject, Text: fmt.Sprintf("Hi %s,\n\nSorry, we could not fit your demo in this time. Please ask for a new demo on our website any time; it starts straight away when a room is free.\n\nIf you would rather talk to a person, just reply to this email.\n\nThanks for your patience.\n", firstName(l.Name))}
+	if err := s.sendTemplated(ctx, l, "demo_queue_sorry", mail.Vars(l.Name, l.Company, "", "", ""), fallback); err != nil {
 		s.log.Warn("could not mail an apology", "error", err)
 	}
+}
+
+// sendReady mails a visitor who waited the address and login of their demo (template demo_ready).
+func (s *Service) sendReady(ctx context.Context, l store.Lead, url, password string, until time.Time) error {
+	minutes := int(s.cfg.TTL.Round(time.Minute) / time.Minute)
+	vars := mail.Vars(l.Name, l.Company, url, "", "")
+	vars["login_email"], vars["login_password"] = l.Email, password
+	vars["ends_at"], vars["minutes"] = until.UTC().Format("15:04")+" UTC", fmt.Sprint(minutes)
+	subject, body := readyMail(l.Name, url, l.Email, password, until, s.cfg.TTL)
+	return s.sendTemplated(ctx, l, "demo_ready", vars, mail.Rendered{Subject: subject, Text: body})
+}
+
+// sendTemplated queues the message from the editable template with this key, or the built-in fallback when there is none.
+func (s *Service) sendTemplated(ctx context.Context, l store.Lead, key string, vars map[string]string, fallback mail.Rendered) error {
+	r, err := s.mailer.ComposeTemplate(ctx, key, vars)
+	if err != nil {
+		r = fallback
+	}
+	_, err = s.mailer.QueueRendered(ctx, l.ID, "", l.Email, r, s.now())
+	return err
 }
 
 func readyMail(name, url, email, password string, until time.Time, ttl time.Duration) (subject, body string) {

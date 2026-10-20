@@ -55,6 +55,7 @@ func New(cfg *config.Config, st *store.Store, demos *demo.Service, mailer *mail.
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
+	mux.HandleFunc("GET /v1/brand/logo.png", a.brandLogo)
 	mux.HandleFunc("POST /v1/demo-requests", a.requestDemo)
 	mux.HandleFunc("POST /v1/contact-requests", a.requestContact)
 

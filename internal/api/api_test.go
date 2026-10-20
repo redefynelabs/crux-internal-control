@@ -308,6 +308,12 @@ func (m okMailer) Ready(context.Context) bool { return m.ready }
 func (okMailer) Queue(context.Context, string, string, string, string, string, time.Time) (store.Email, error) {
 	return store.Email{}, nil
 }
+func (okMailer) QueueRendered(context.Context, string, string, string, mail.Rendered, time.Time) (store.Email, error) {
+	return store.Email{}, nil
+}
+func (okMailer) ComposeTemplate(context.Context, string, map[string]string) (mail.Rendered, error) {
+	return mail.Rendered{}, mail.ErrNoTemplate
+}
 
 // fullServer has one demo slot and a waiting line; the first request takes the slot.
 func fullServer(t *testing.T, mailReady bool) http.Handler {

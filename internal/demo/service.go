@@ -17,6 +17,7 @@ import (
 
 	"github.com/redefynelabs/erp-control-plane/internal/config"
 	"github.com/redefynelabs/erp-control-plane/internal/entitle"
+	cpmail "github.com/redefynelabs/erp-control-plane/internal/mail"
 	"github.com/redefynelabs/erp-control-plane/internal/notify"
 	"github.com/redefynelabs/erp-control-plane/internal/provision"
 	"github.com/redefynelabs/erp-control-plane/internal/store"
@@ -66,6 +67,9 @@ type Ready struct {
 type Mailer interface {
 	Ready(ctx context.Context) bool
 	Queue(ctx context.Context, leadID, sentBy, to, subject, body string, after time.Time) (store.Email, error)
+	QueueRendered(ctx context.Context, leadID, sentBy, to string, r cpmail.Rendered, after time.Time) (store.Email, error)
+	// ComposeTemplate renders the editable template with this key; it fails with cpmail.ErrNoTemplate when there is none.
+	ComposeTemplate(ctx context.Context, key string, vars map[string]string) (cpmail.Rendered, error)
 }
 
 // Intake is told about arriving leads and ended demos so the sales team's follow-up can start. Nil means nothing happens.

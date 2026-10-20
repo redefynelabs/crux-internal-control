@@ -51,6 +51,8 @@ func (a *API) routes(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /v1/templates", staff(a.listTemplates))
 	mux.HandleFunc("PUT /v1/templates/{id}", adminOnly(a.putTemplate))
+	mux.HandleFunc("POST /v1/templates/preview", adminOnly(a.previewTemplate))
+	mux.HandleFunc("POST /v1/templates/test", adminOnly(a.testTemplate))
 	mux.HandleFunc("GET /v1/settings/email", adminOnly(a.getEmailSettings))
 	mux.HandleFunc("PUT /v1/settings/email", adminOnly(a.putEmailSettings))
 	mux.HandleFunc("POST /v1/settings/email/test", adminOnly(a.testEmail))

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/redefynelabs/erp-control-plane/internal/config"
+	"github.com/redefynelabs/erp-control-plane/internal/mail"
 	"github.com/redefynelabs/erp-control-plane/internal/store"
 )
 
@@ -18,6 +19,9 @@ type fakeMailer struct {
 	mu    sync.Mutex
 	ready bool
 	sent  []sentMail
+	// html holds the HTML part of each designed message queued; templates are the designed ones ComposeTemplate knows.
+	html      []string
+	templates map[string][2]string
 }
 
 func (f *fakeMailer) Ready(context.Context) bool { return f.ready }
@@ -27,6 +31,22 @@ func (f *fakeMailer) Queue(_ context.Context, _, _, to, subject, body string, _ 
 	f.sent = append(f.sent, sentMail{to, subject, body})
 	return store.Email{}, nil
 }
+func (f *fakeMailer) QueueRendered(ctx context.Context, leadID, sentBy, to string, r mail.Rendered, after time.Time) (store.Email, error) {
+	f.mu.Lock()
+	f.html = append(f.html, r.HTML)
+	f.mu.Unlock()
+	return f.Queue(ctx, leadID, sentBy, to, r.Subject, r.Text, after)
+}
+
+// ComposeTemplate answers with the template set in f.templates (key to its subject and HTML content), or none.
+func (f *fakeMailer) ComposeTemplate(_ context.Context, key string, vars map[string]string) (mail.Rendered, error) {
+	t, ok := f.templates[key]
+	if !ok {
+		return mail.Rendered{}, mail.ErrNoTemplate
+	}
+	return mail.Composer{LogoURL: "https://api.example.com/v1/brand/logo.png"}.Compose(mail.FormatHTML, t[0], t[1], vars), nil
+}
+
 func (f *fakeMailer) to(addr string) []sentMail {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -309,5 +329,43 @@ func TestAQueuedDemoThatKeepsFailingIsGivenUpAndTheLineMovesOn(t *testing.T) {
 	e.svc.Dispatch(ctx)
 	if s := demoOf(t, e, "d@x.example").Status; s != store.DemoActive {
 		t.Fatalf("d should start next, got %s", s)
+	}
+}
+
+func TestTheReadyEmailUsesTheDesignedTemplateWhenThereIsOne(t *testing.T) {
+	e, m := fullEnv(t)
+	m.templates = map[string][2]string{"demo_ready": {"Ready, {{first_name}}", `<h1>Ready</h1><p>Hi {{first_name}}, your demo is live and waiting for you now.</p>[[details: Email = {{login_email}} | Password = {{login_password}}]][[button: Open | {{demo_url}}]]`}}
+	ctx := context.Background()
+	if _, err := e.svc.Request(ctx, req("c@x.example")); err != nil {
+		t.Fatal(err)
+	}
+	_ = e.svc.End(ctx, demoOf(t, e, "a@x.example").ID)
+	e.svc.Dispatch(ctx)
+
+	c := demoOf(t, e, "c@x.example")
+	pw := e.stacks.running[c.Slug].ServerEnv["DEMO_ADMIN_PASSWORD"]
+	mails := m.to("c@x.example")
+	if len(mails) != 1 || mails[0].subject != "Ready, Asha" {
+		t.Fatalf("want one mail with the template's subject, got %+v", mails)
+	}
+	if len(m.html) != 1 || !strings.Contains(m.html[0], "<!doctype html>") || !strings.Contains(m.html[0], pw) || !strings.Contains(m.html[0], `href="`+c.URL+`"`) {
+		t.Errorf("the designed HTML must carry the layout, the demo's own password and its address")
+	}
+	if !strings.Contains(mails[0].body, "Password: "+pw) || strings.Contains(mails[0].body, "<") {
+		t.Errorf("the plain-text part must carry the login too, got %q", mails[0].body)
+	}
+}
+
+func TestTheReadyEmailFallsBackToPlainTextWithoutATemplate(t *testing.T) {
+	e, m := fullEnv(t) // no templates known to the fake mailer
+	ctx := context.Background()
+	_, _ = e.svc.Request(ctx, req("c@x.example"))
+	_ = e.svc.End(ctx, demoOf(t, e, "a@x.example").ID)
+	e.svc.Dispatch(ctx)
+	if mails := m.to("c@x.example"); len(mails) != 1 || !strings.Contains(mails[0].body, "Password:") {
+		t.Fatalf("the built-in text must still be sent, got %+v", mails)
+	}
+	if len(m.html) != 1 || m.html[0] != "" {
+		t.Errorf("a plain fallback has no HTML part, got %q", m.html)
 	}
 }

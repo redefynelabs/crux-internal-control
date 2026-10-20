@@ -82,7 +82,7 @@ func run() error {
 	}
 	issuer := entitle.NewIssuer(st, signer)
 	demos.WithEntitlements(issuer)
-	mailer := mail.New(st, cfg.SecretsKey, log)
+	mailer := mail.New(st, cfg.SecretsKey, log).WithPublicURL(cfg.Install.PublicURL).WithSiteURL(cfg.SiteURL)
 	team := sales.New(st, mailer, log)
 	demos.WithIntake(team)
 	demos.WithMailer(mailer)

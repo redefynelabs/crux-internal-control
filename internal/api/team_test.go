@@ -19,14 +19,18 @@ import (
 )
 
 type sink struct {
-	mu   sync.Mutex
-	sent []string
+	mu    sync.Mutex
+	sent  []string
+	texts []string
+	htmls []string
 }
 
-func (s *sink) Send(_ context.Context, _ mail.Settings, _ string, to, subject, _ string) error {
+func (s *sink) Send(_ context.Context, _ mail.Settings, _ string, to, subject, text, html string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sent = append(s.sent, to+"|"+subject)
+	s.texts = append(s.texts, text)
+	s.htmls = append(s.htmls, html)
 	return nil
 }
 

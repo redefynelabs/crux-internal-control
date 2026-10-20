@@ -126,8 +126,9 @@ func (s *Sales) queue(ctx context.Context, l store.Lead, key string, after time.
 		return
 	}
 	ms, _ := s.mail.Settings(ctx)
-	vars := mail.Vars(l.Name, l.Company, "", l.OwnerName, ms.Signature)
-	if _, err := s.mail.Queue(ctx, l.ID, "", l.Email, mail.Render(t.Subject, vars), mail.Render(t.Body, vars), after); err != nil {
+	vars := s.mail.Enrich(ctx, mail.Vars(l.Name, l.Company, "", l.OwnerName, ms.Signature))
+	r := s.mail.Composer().Compose(t.Format, t.Subject, t.Body, vars)
+	if _, err := s.mail.QueueRendered(ctx, l.ID, "", l.Email, r, after); err != nil {
 		s.log.Warn("sales: queueing an email", "template", key, "error", err)
 	}
 }

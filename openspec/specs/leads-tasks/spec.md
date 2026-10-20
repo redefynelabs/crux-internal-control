@@ -15,6 +15,13 @@ The admin app SHALL show leads as a board; dragging a card SHALL change its stag
 ### Requirement: Tasks
 A task belongs to a lead and has a title, a kind (`call`, `email` or `other`), a due time and an assignee, and is open until it has a done time. The tasks board SHALL let dragging to a day reschedule it and dragging to *done* complete it. **New task** SHALL create one. Overdue and open counts SHALL feed the analytics team table.
 
+### Requirement: Designed emails
+An email template SHALL be plain text or a designed (HTML) email. A designed template holds the message content only (headings, paragraphs, lists, links and the `[[button: Label | URL]]`, `[[steps: a | b]]` and `[[details: Label = value | ...]]` shortcodes); when sent it SHALL be wrapped in the Crux layout (logo served at `/v1/brand/logo.png`, a card, a footer) and sent as `multipart/alternative` with an automatic plain-text copy, which is also what the lead's history shows. Placeholder values SHALL be HTML-escaped in the HTML part and used as typed in the text part, and a button whose address is empty or not http(s)/mailto SHALL be left out. The template editor (admins) SHALL show a live preview with sample values and SHALL send a test to the signed-in admin. Choosing a designed template in the lead's composer SHALL send the designed email with the person's typed text as an optional note above it. The messages the control plane sends by itself (`demo_ready`, `demo_queue_sorry`) SHALL be editable templates, with built-in plain text as the fallback.
+
+#### Scenario: Designed follow-up
+- **WHEN** sales sends the designed "Still interested?" template with a personal note
+- **THEN** the lead receives an email with the Crux logo, the note above the message, one button, and a plain-text alternative
+
 ### Requirement: Email
 Sending email to a lead SHALL use the saved SMTP settings through a queue, retried up to three times, and failures SHALL show on the lead and the overview. The SMTP password SHALL be stored encrypted with `CP_SECRETS_KEY` and never shown. Templates SHALL support `{{name}}`, `{{first_name}}`, `{{company}}`, `{{demo_url}}`, `{{owner}}`, `{{signature}}`.
 

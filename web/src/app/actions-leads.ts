@@ -84,7 +84,8 @@ export async function sendEmail(id: string, _: FormState, form: FormData): Promi
   const subject = str(form, "subject");
   const body = String(form.get("body") ?? "").trim();
   if (!subject) return { error: "Add a subject", fields: { subject: "Add a subject" } };
-  if (!body) return { error: "Write the message", fields: { body: "Write the message" } };
+  // A designed template needs no typed message (the note is optional); the API refuses an empty plain one.
+  if (!body && !str(form, "template_id")) return { error: "Write the message", fields: { body: "Write the message" } };
   try {
     await api(`/v1/leads/${encodeURIComponent(id)}/emails`, { method: "POST", body: { template_id: str(form, "template_id") || undefined, subject, body } });
   } catch (e) {

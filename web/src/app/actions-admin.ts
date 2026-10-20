@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { api } from "@/lib/api";
-import type { EmailSettings, GeneralSettings, InviteResult } from "@/lib/types";
+import type { EmailSettings, GeneralSettings, InviteResult, TemplatePreview } from "@/lib/types";
 import { failure, type FormState } from "@/lib/form";
 
 const str = (form: FormData, key: string) => String(form.get(key) ?? "").trim();
@@ -54,12 +54,32 @@ export async function saveTemplate(id: string, _: FormState, form: FormData): Pr
   const body = String(form.get("body") ?? "").trim();
   if (!name || !subject || !body) return { error: "Name, subject and message are all needed" };
   try {
-    await api(`/v1/templates/${encodeURIComponent(id)}`, { method: "PUT", body: { name, subject, body } });
+    const format = str(form, "format") === "html" ? "html" : "text";
+    await api(`/v1/templates/${encodeURIComponent(id)}`, { method: "PUT", body: { name, subject, body, format } });
   } catch (e) {
     return failure(e);
   }
   revalidatePath("/templates");
   return { saved: true };
+}
+
+/** Renders a template as typed (not yet saved) with sample values, for the editor's preview. */
+export async function previewTemplate(format: string, subject: string, body: string): Promise<{ preview?: TemplatePreview; error?: string }> {
+  try {
+    return { preview: await api<TemplatePreview>("/v1/templates/preview", { method: "POST", body: { format, subject, body } }) };
+  } catch (e) {
+    return { error: failure(e).error ?? "Could not preview" };
+  }
+}
+
+/** Sends the template, with sample values, to the person asking. */
+export async function sendTemplateTest(format: string, subject: string, body: string): Promise<{ sentTo?: string; error?: string }> {
+  try {
+    const out = await api<{ sent_to: string }>("/v1/templates/test", { method: "POST", body: { format, subject, body } });
+    return { sentTo: out.sent_to };
+  } catch (e) {
+    return { error: failure(e).error ?? "Could not send the test" };
+  }
 }
 
 export async function saveEmailSettings(_: FormState, form: FormData): Promise<FormState> {

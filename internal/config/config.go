@@ -24,6 +24,9 @@ type Config struct {
 	// AdminURL is the public address of the admin app; invitation emails link to it. Empty: invites are shown as links
 	// on screen only.
 	AdminURL string
+	// SiteURL is the marketing site's address, used for the "start a demo" and "pricing" links in designed emails
+	// ({{site_url}}). Empty: those buttons are left out.
+	SiteURL string
 	// SecretsKey encrypts the SMTP password stored in the database. Required, at least 32 characters.
 	SecretsKey string
 	// TurnstileSecret enables Cloudflare Turnstile checks on demo requests. Empty: no captcha.
@@ -132,6 +135,7 @@ func load(lookup func(string) (string, bool)) (*Config, error) {
 		DatabaseURL:        need("CP_DATABASE_URL"),
 		TurnstileSecret:    get("CP_TURNSTILE_SECRET", ""),
 		AdminURL:           strings.TrimRight(get("CP_ADMIN_URL", ""), "/"),
+		SiteURL:            strings.TrimRight(get("CP_SITE_URL", ""), "/"),
 		SecretsKey:         need("CP_SECRETS_KEY"),
 		TrustProxy:         get("CP_TRUST_PROXY", "") == "true",
 		NotifyWebhookURL:   get("CP_NOTIFY_WEBHOOK_URL", ""),
@@ -144,6 +148,9 @@ func load(lookup func(string) (string, bool)) (*Config, error) {
 		if o = strings.TrimRight(strings.TrimSpace(o), "/"); o != "" {
 			c.AllowedOrigins = append(c.AllowedOrigins, o)
 		}
+	}
+	if u := c.SiteURL; u != "" && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+		problems = append(problems, "CP_SITE_URL: must be an http(s) address")
 	}
 	if u := c.NotifyWebhookURL; u != "" && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
 		problems = append(problems, "CP_NOTIFY_WEBHOOK_URL: must be an http(s) URL")

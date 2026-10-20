@@ -88,10 +88,10 @@ export function TemplateForm({ template }: { template: Template }) {
           {previewError ? (
             <p role="alert" className="text-sm text-destructive">{previewError}</p>
           ) : (
-            <div className="overflow-hidden rounded-lg border bg-[#f3f5fa]">
+            <div className="overflow-hidden rounded-lg border bg-white">
               <p className="truncate border-b bg-background px-3 py-2 text-xs"><span className="text-muted-foreground">Subject: </span>{preview?.subject ?? ""}</p>
               {designed && view === "email" ? (
-                <iframe title={`Preview of ${template.name}`} sandbox="" srcDoc={preview?.html ?? ""} className="block h-[560px] w-full bg-[#f3f5fa]" />
+                <iframe title={`Preview of ${template.name}`} sandbox="" srcDoc={preview?.html ?? ""} className="block h-[560px] w-full bg-white" />
               ) : (
                 <pre className="h-[560px] overflow-auto whitespace-pre-wrap bg-background p-4 text-xs leading-relaxed">{preview?.text ?? ""}</pre>
               )}

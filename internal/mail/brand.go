@@ -95,12 +95,12 @@ func expandShortcodes(content string, vars map[string]string, text bool) string 
 			if text {
 				return "\n\n" + label + ": " + url + "\n\n"
 			}
-			return fmt.Sprintf(`<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:26px 0"><tr><td align="center" bgcolor="%[1]s" style="border-radius:10px"><a href="%[2]s" target="_blank" style="display:inline-block;padding:15px 30px;font-family:%[3]s;font-size:16px;font-weight:700;line-height:1;color:#ffffff;text-decoration:none;border-radius:10px;background:%[1]s">%[4]s</a></td></tr></table>`,
+			return fmt.Sprintf(`<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:28px 0"><tr><td align="center" bgcolor="%[1]s" style="border-radius:6px"><a href="%[2]s" target="_blank" style="display:inline-block;padding:14px 26px;font-family:%[3]s;font-size:15px;font-weight:600;line-height:1;color:#ffffff;text-decoration:none;border-radius:6px;background:%[1]s">%[4]s</a></td></tr></table>`,
 				brandColor, html.EscapeString(url), fontStack, label)
 		case "steps":
 			var b strings.Builder
 			if !text {
-				b.WriteString(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:14px 0 18px">`)
+				b.WriteString(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:10px 0 20px">`)
 			} else {
 				b.WriteString("\n\n")
 			}
@@ -109,17 +109,18 @@ func expandShortcodes(content string, vars map[string]string, text bool) string 
 					fmt.Fprintf(&b, "%d. %s\n", i+1, s)
 					continue
 				}
-				fmt.Fprintf(&b, `<tr><td width="38" valign="top" style="padding:7px 0"><div style="width:26px;height:26px;line-height:26px;border-radius:13px;background:#e8f0ff;color:%s;text-align:center;font-family:%s;font-size:13px;font-weight:700">%d</div></td><td valign="top" style="padding:7px 0 7px 4px;font-family:%s;font-size:15px;line-height:1.55;color:#374151">%s</td></tr>`,
-					brandColor, fontStack, i+1, fontStack, s)
+				fmt.Fprintf(&b, `<tr><td width="30" valign="top" style="padding:6px 0;font-family:%s;font-size:15px;font-weight:700;line-height:1.55;color:%s">%d.</td><td valign="top" style="padding:6px 0;font-family:%s;font-size:15px;line-height:1.55;color:#374151">%s</td></tr>`,
+					fontStack, brandColor, i+1, fontStack, s)
 			}
 			if !text {
 				b.WriteString(`</table>`)
 			}
 			return b.String()
 		case "details":
+			// Label and value rows between two hairlines: no tinted box, so it reads as part of the page, not a widget.
 			var b strings.Builder
 			if !text {
-				b.WriteString(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:20px 0;background:#f5f8ff;border:1px solid #dbe5fb;border-radius:12px"><tr><td style="padding:8px 20px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">`)
+				b.WriteString(`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:22px 0;border-top:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb">`)
 			} else {
 				b.WriteString("\n\n")
 			}
@@ -131,15 +132,15 @@ func expandShortcodes(content string, vars map[string]string, text bool) string 
 					fmt.Fprintf(&b, "%s: %s\n", label, value)
 					continue
 				}
-				line := "border-bottom:1px solid #e3eafc"
+				line := "border-bottom:1px solid #f0f1f4"
 				if i == len(rows)-1 {
 					line = "border-bottom:0"
 				}
-				fmt.Fprintf(&b, `<tr><td width="34%%" valign="top" style="padding:11px 0;font-family:%s;font-size:13px;color:#6b7280;%s">%s</td><td valign="top" style="padding:11px 0;font-family:'SFMono-Regular',Menlo,Consolas,monospace;font-size:15px;font-weight:600;color:#0b1220;%s;overflow-wrap:anywhere;word-break:normal">%s</td></tr>`,
+				fmt.Fprintf(&b, `<tr><td width="32%%" valign="top" style="padding:12px 0;font-family:%s;font-size:13px;color:#6b7280;%s">%s</td><td valign="top" style="padding:12px 0;font-family:'SFMono-Regular',Menlo,Consolas,monospace;font-size:15px;font-weight:600;color:#111827;%s;overflow-wrap:anywhere;word-break:normal">%s</td></tr>`,
 					fontStack, line, label, line, value)
 			}
 			if !text {
-				b.WriteString(`</table></td></tr></table>`)
+				b.WriteString(`</table>`)
 			}
 			return b.String()
 		}
@@ -206,34 +207,35 @@ func preheader(text string) string {
 	return ""
 }
 
-// layout wraps a message in the branded shell: logo, a white card with an accent bar, and a quiet footer. It is built for
-// mail apps, not browsers: tables, inline styles, a 600px column that shrinks on a phone, and a name beside the logo
-// so the header still reads when images are blocked.
+// layout wraps a message in the branded shell: the logo centred above a plain white page, the message in a single
+// readable column with no card around it, and a quiet centred footer. It is built for mail apps, not browsers: tables,
+// inline styles, a 560px column that shrinks on a phone, and a name beside the logo so the header still reads when images
+// are blocked.
 func (c Composer) layout(content, pre, title string) string {
 	logo := ""
 	if c.LogoURL != "" {
-		logo = fmt.Sprintf(`<img src="%s" width="34" height="34" alt="" style="display:inline-block;vertical-align:middle;border:0;outline:none;margin-right:10px">`, html.EscapeString(c.LogoURL))
+		logo = fmt.Sprintf(`<img src="%s" width="40" height="40" alt="" style="display:inline-block;vertical-align:middle;border:0;outline:none;margin-right:10px">`, html.EscapeString(c.LogoURL))
 	}
 	return fmt.Sprintf(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><title>%[1]s</title>
 <style>
-body{margin:0;padding:0;background:#f3f5fa;-webkit-text-size-adjust:100%%}
+body{margin:0;padding:0;background:#ffffff;-webkit-text-size-adjust:100%%}
 p{margin:0 0 16px;font-size:16px;line-height:1.65;color:#374151}
-h1{margin:0 0 16px;font-size:27px;line-height:1.25;color:#0b1220;font-weight:800;letter-spacing:-0.01em}
-h2{margin:22px 0 10px;font-size:17px;line-height:1.3;color:#0b1220;font-weight:700}
-ul,ol{margin:0 0 16px;padding-left:22px;font-size:16px;line-height:1.65;color:#374151}li{margin-bottom:6px}
-a{color:%[2]s}strong{color:#0b1220}.muted{color:#6b7280!important;font-size:13px!important;line-height:1.55!important}
-@media only screen and (max-width:620px){.card{padding:26px 22px!important}h1{font-size:23px!important}}
+h1{margin:0 0 18px;font-size:24px;line-height:1.3;color:#111827;font-weight:700;letter-spacing:-0.01em}
+h2{margin:24px 0 8px;font-size:16px;line-height:1.3;color:#111827;font-weight:700}
+ul,ol{margin:0 0 16px;padding-left:20px;font-size:16px;line-height:1.65;color:#374151}li{margin-bottom:6px}
+a{color:%[2]s}strong{color:#111827}.muted{color:#6b7280!important;font-size:13px!important;line-height:1.55!important}
+@media only screen and (max-width:600px){.col{padding-left:22px!important;padding-right:22px!important}h1{font-size:22px!important}}
 </style></head>
-<body style="margin:0;padding:0;background:#f3f5fa">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;font-size:1px;line-height:1px;color:#f3f5fa">%[3]s&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>
-<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f3f5fa"><tr><td align="center" style="padding:32px 14px">
-<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="width:100%%;max-width:600px">
-<tr><td style="padding:0 6px 18px;font-family:%[4]s;font-size:21px;font-weight:800;color:#0b1220;letter-spacing:-0.01em">%[5]s<span style="vertical-align:middle">%[6]s</span></td></tr>
-<tr><td class="card" style="background:#ffffff;border:1px solid #e6eaf3;border-top:4px solid %[2]s;border-radius:16px;padding:38px 40px;font-family:%[4]s;font-size:16px;line-height:1.65;color:#374151">
+<body style="margin:0;padding:0;background:#ffffff">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;font-size:1px;line-height:1px;color:#ffffff">%[3]s&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;&nbsp;&zwnj;</div>
+<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff"><tr><td align="center" style="padding:44px 0 40px">
+<table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:100%%;max-width:560px">
+<tr><td class="col" align="center" style="padding:0 0 34px;font-family:%[4]s;font-size:22px;font-weight:800;color:#111827;letter-spacing:-0.01em;text-align:center">%[5]s<span style="vertical-align:middle">%[6]s</span></td></tr>
+<tr><td class="col" style="padding:0;font-family:%[4]s;font-size:16px;line-height:1.65;color:#374151">
 %[7]s
 </td></tr>
-<tr><td style="padding:22px 12px 0;text-align:center;font-family:%[4]s;font-size:12px;line-height:1.6;color:#8b93a7">You are getting this because you asked about %[6]s.<br>Just reply to this email: it goes to a real person.</td></tr>
+<tr><td class="col" style="padding:34px 0 0"><table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0"><tr><td style="border-top:1px solid #e5e7eb;padding-top:18px;text-align:center;font-family:%[4]s;font-size:12px;line-height:1.7;color:#9ca3af">You are getting this because you asked about %[6]s.<br>Just reply to this email: it goes to a real person.</td></tr></table></td></tr>
 </table></td></tr></table></body></html>`,
 		html.EscapeString(title), brandColor, html.EscapeString(pre), fontStack, logo, BrandName, content)
 }

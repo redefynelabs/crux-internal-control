@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -9,10 +10,13 @@ import (
 
 // Demo statuses.
 const (
+	DemoQueued       = "queued"
 	DemoProvisioning = "provisioning"
 	DemoActive       = "active"
 	DemoFailed       = "failed"
 	DemoExpired      = "expired"
+	// DemoAbandoned is a queued request that was cancelled or gave up waiting; it never had an instance.
+	DemoAbandoned = "abandoned"
 )
 
 // Demo is one short-lived demo instance.
@@ -27,19 +31,97 @@ type Demo struct {
 	CreatedAt time.Time  `json:"created_at"`
 	ExpiresAt time.Time  `json:"expires_at"`
 	EndedAt   *time.Time `json:"ended_at,omitempty"`
+	// QueuedAt is when the visitor joined the line (nil for a demo that started at once). For a queued demo ExpiresAt is
+	// when the request gives up; Request holds the choices to build it with.
+	QueuedAt *time.Time `json:"queued_at,omitempty"`
+	Request  []byte     `json:"-"`
 }
 
-const demoCols = `id, lead_id, slug, status, url, ip, error, created_at, expires_at, ended_at`
+const demoCols = `id, lead_id, slug, status, url, ip, error, created_at, expires_at, ended_at, queued_at, request`
 
 func scanDemo(row pgx.Row) (Demo, error) {
 	var d Demo
-	err := row.Scan(&d.ID, &d.LeadID, &d.Slug, &d.Status, &d.URL, &d.IP, &d.Error, &d.CreatedAt, &d.ExpiresAt, &d.EndedAt)
+	err := row.Scan(&d.ID, &d.LeadID, &d.Slug, &d.Status, &d.URL, &d.IP, &d.Error, &d.CreatedAt, &d.ExpiresAt, &d.EndedAt, &d.QueuedAt, &d.Request)
 	return d, err
 }
 
 // CreateDemo records a demo that is about to be provisioned.
 func (s *Store) CreateDemo(ctx context.Context, leadID, slug, ip string, expires time.Time) (Demo, error) {
 	return scanDemo(s.pool.QueryRow(ctx, `INSERT INTO demos (lead_id, slug, ip, expires_at) VALUES ($1, $2, $3, $4) RETURNING `+demoCols, leadID, slug, ip, expires))
+}
+
+// CreateQueuedDemo records a request that waits for a free slot until giveUp. request is the JSON of the visitor's choices.
+func (s *Store) CreateQueuedDemo(ctx context.Context, leadID, slug, ip string, giveUp time.Time, request []byte) (Demo, error) {
+	return scanDemo(s.pool.QueryRow(ctx, `INSERT INTO demos (lead_id, slug, ip, status, expires_at, queued_at, request) VALUES ($1, $2, $3, 'queued', $4, now(), $5) RETURNING `+demoCols, leadID, slug, ip, giveUp, request))
+}
+
+// CountQueued is how many requests wait for a slot.
+func (s *Store) CountQueued(ctx context.Context) (n int, err error) {
+	err = s.pool.QueryRow(ctx, `SELECT count(*) FROM demos WHERE status = 'queued'`).Scan(&n)
+	return
+}
+
+// QueuedDemoForLead returns the lead's waiting request, if it has one.
+func (s *Store) QueuedDemoForLead(ctx context.Context, leadID string) (Demo, bool, error) {
+	d, err := scanDemo(s.pool.QueryRow(ctx, `SELECT `+demoCols+` FROM demos WHERE lead_id = $1 AND status = 'queued' ORDER BY queued_at LIMIT 1`, leadID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return d, false, nil
+	}
+	return d, err == nil, err
+}
+
+// QueuePosition is the place in line of a queued demo, 1 being next.
+func (s *Store) QueuePosition(ctx context.Context, d Demo) (n int, err error) {
+	if d.QueuedAt == nil {
+		return 0, nil
+	}
+	err = s.pool.QueryRow(ctx, `SELECT 1 + count(*) FROM demos WHERE status = 'queued' AND (queued_at, id) < ($1, $2::uuid)`, *d.QueuedAt, d.ID).Scan(&n)
+	return
+}
+
+// ClaimNextQueued takes the longest waiting request and turns it into a demo that is being provisioned, ending at
+// expires. Its start time is now: the wait does not count against the demo's hour. ok is false when nobody waits.
+func (s *Store) ClaimNextQueued(ctx context.Context, expires time.Time) (d Demo, ok bool, err error) {
+	d, err = scanDemo(s.pool.QueryRow(ctx, `
+		UPDATE demos SET status = 'provisioning', expires_at = $1, created_at = now()
+		WHERE id = (SELECT id FROM demos WHERE status = 'queued' ORDER BY queued_at, id LIMIT 1 FOR UPDATE SKIP LOCKED)
+		RETURNING `+demoCols, expires))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return d, false, nil
+	}
+	return d, err == nil, err
+}
+
+// RequeueDemo puts a claimed demo whose start failed back in line, keeping its place, with request updated (the retry
+// count) and giving up at giveUp.
+func (s *Store) RequeueDemo(ctx context.Context, id string, giveUp time.Time, request []byte) error {
+	_, err := s.pool.Exec(ctx, `UPDATE demos SET status = 'queued', expires_at = $2, request = $3, error = '' WHERE id = $1 AND status = 'provisioning'`, id, giveUp, request)
+	return err
+}
+
+// AbandonQueued marks a waiting (or just claimed) request as given up: cancelled, waited too long or could not be started.
+// It reports whether it was still waiting. Unlike a failed demo the reaper leaves it alone and nobody is sent a follow-up.
+func (s *Store) AbandonQueued(ctx context.Context, id, reason string) (bool, error) {
+	tag, err := s.pool.Exec(ctx, `UPDATE demos SET status = 'abandoned', error = $2, ended_at = now() WHERE id = $1 AND status IN ('queued', 'provisioning')`, id, reason)
+	return tag.RowsAffected() > 0, err
+}
+
+// StaleQueued returns waiting requests whose time to give up has passed.
+func (s *Store) StaleQueued(ctx context.Context, now time.Time) ([]Demo, error) {
+	rows, err := s.pool.Query(ctx, `SELECT `+demoCols+` FROM demos WHERE status = 'queued' AND expires_at <= $1 ORDER BY queued_at LIMIT 100`, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Demo
+	for rows.Next() {
+		d, err := scanDemo(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }
 
 // GetDemo returns one demo.

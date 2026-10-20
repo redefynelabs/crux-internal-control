@@ -122,7 +122,7 @@ export interface InviteResult {
   email_sent: boolean;
 }
 
-export type DemoStatus = "provisioning" | "active" | "failed" | "expired";
+export type DemoStatus = "queued" | "provisioning" | "active" | "failed" | "expired" | "abandoned";
 
 export interface Demo {
   id: string;
@@ -135,6 +135,8 @@ export interface Demo {
   created_at: string;
   expires_at: string;
   ended_at?: string | null;
+  /** When the visitor joined the waiting line; absent for a demo that started at once. */
+  queued_at?: string | null;
 }
 
 export interface Stats {

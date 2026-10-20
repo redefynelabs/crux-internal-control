@@ -8,6 +8,8 @@ export function LeadStatusBadge({ status }: { status: LeadStatus }) {
 }
 
 const DEMO_TONE: Record<DemoStatus, string> = {
+  queued: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200",
+  abandoned: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200",
   provisioning: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
   active: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200",
   failed: "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200",
@@ -18,7 +20,7 @@ export function DemoStatusBadge({ status }: { status: DemoStatus }) {
   return (
     <Badge className={cn("capitalize", DEMO_TONE[status])}>
       {status === "active" && <span className="size-1.5 rounded-full bg-emerald-500" />}
-      {status}
+      {status === "queued" ? "waiting" : status === "abandoned" ? "gave up" : status}
     </Badge>
   );
 }

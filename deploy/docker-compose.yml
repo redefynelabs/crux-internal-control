@@ -14,16 +14,17 @@ services:
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
       - --entrypoints.web.http.redirections.entrypoint.scheme=https
       - --entrypoints.websecure.address=:443
-      # One wildcard certificate for the admin and API addresses and every demo, so a demo never asks Let's Encrypt for
-      # a certificate of its own (that would hit its limits within a day). It needs a DNS challenge, so the DNS host's
-      # credentials go in .env (see ACME_DNS_PROVIDER).
+      # One certificate for the admin and API addresses and a wildcard for every demo, so a demo never asks Let's Encrypt
+      # for a certificate of its own (that would hit its limits within a day). It needs a DNS challenge, so the DNS host's
+      # credentials go in .env (see ACME_DNS_PROVIDER). The addresses are ADMIN_HOST, API_HOST and DEMO_DOMAIN (see .env).
       - --entrypoints.websecure.http.tls.certresolver=le
-      - --entrypoints.websecure.http.tls.domains[0].main=${BASE_DOMAIN}
-      - --entrypoints.websecure.http.tls.domains[0].sans=*.${BASE_DOMAIN},*.demo.${BASE_DOMAIN}
+      - --entrypoints.websecure.http.tls.domains[0].main=${ADMIN_HOST:-admin.${BASE_DOMAIN}}
+      - --entrypoints.websecure.http.tls.domains[0].sans=${API_HOST:-api.${BASE_DOMAIN}},*.${DEMO_DOMAIN:-demo.${BASE_DOMAIN}}
       - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
       - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
       - --certificatesresolvers.le.acme.dnschallenge.provider=${ACME_DNS_PROVIDER}
-    env_file: [.env]
+    # acme.env holds the DNS host's credentials for the wildcard certificate (see acme.env.example).
+    env_file: [.env, acme.env]
     ports: ["80:80", "443:443"]
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -67,8 +68,8 @@ services:
       CP_PG_USER: erp_demo
       CP_PG_PASSWORD: ${DEMO_ROLE_PASSWORD}
       CP_REDIS_URL: redis://redis:6379/1
-      CP_DEMO_DOMAIN: demo.${BASE_DOMAIN}
-      CP_ADMIN_URL: https://admin.${BASE_DOMAIN}
+      CP_DEMO_DOMAIN: ${DEMO_DOMAIN:-demo.${BASE_DOMAIN}}
+      CP_ADMIN_URL: https://${ADMIN_HOST:-admin.${BASE_DOMAIN}}
       CP_TRUST_PROXY: "true"
       # The wildcard certificate is set on the entrypoint, so demos carry no resolver of their own.
       CP_TRAEFIK_CERT_RESOLVER: none
@@ -86,7 +87,7 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=erp-proxy
-      - traefik.http.routers.cp-api.rule=Host(`api.${BASE_DOMAIN}`)
+      - traefik.http.routers.cp-api.rule=Host(`${API_HOST:-api.${BASE_DOMAIN}}`)
       - traefik.http.routers.cp-api.entrypoints=websecure
       - traefik.http.services.cp-api.loadbalancer.server.port=8090
     networks: [erp-data, erp-proxy]
@@ -99,7 +100,7 @@ services:
     labels:
       - traefik.enable=true
       - traefik.docker.network=erp-proxy
-      - traefik.http.routers.cp-admin.rule=Host(`admin.${BASE_DOMAIN}`)
+      - traefik.http.routers.cp-admin.rule=Host(`${ADMIN_HOST:-admin.${BASE_DOMAIN}}`)
       - traefik.http.routers.cp-admin.entrypoints=websecure
       - traefik.http.services.cp-admin.loadbalancer.server.port=3100
     networks: [erp-data, erp-proxy]

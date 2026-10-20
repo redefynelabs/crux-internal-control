@@ -16,6 +16,13 @@ Each demo SHALL be given the requesting visitor's email (lowercase) as its admin
 - **WHEN** two visitors each request a demo
 - **THEN** each demo has its own administrator email and password, and neither opens the other's demo
 
+### Requirement: A waiting line when every room is busy
+When `CP_MAX_DEMOS` demos are live, or others already wait, a valid request SHALL be saved (lead, history and a `queued` demo row with its choices) and answered `202 {queued: true, position}` without building anything. Nobody SHALL jump the line. A dispatcher (every 10 s) SHALL start the longest waiting request when a room is free; its hour starts then, and the visitor SHALL be emailed the address, login and expiry. The request SHALL be turned away with `503 at_capacity` instead when email cannot be sent (the login could not be delivered), when `CP_DEMO_QUEUE_MAX` (default 30, 0 turns waiting off) are already waiting, unless the visitor already waits, in which case they keep their place. A start that fails SHALL go back in line, keeping its place, and be given up with an apology after three tries. A request still waiting after `CP_DEMO_QUEUE_WAIT` (default 24h) SHALL be given up with an apology. Staff MAY remove a waiting visitor; nothing is emailed. Per-email and per-IP limits count queued requests.
+
+#### Scenario: Last room taken
+- **WHEN** a visitor asks for a demo while every room is busy and email works
+- **THEN** they get a place in line, a lead exists, and when a room frees up the demo starts and its login is emailed
+
 ### Requirement: Lifetime
 A demo SHALL live `CP_DEMO_TTL` (default 1h) and SHALL NOT be extended past 24 hours in all. Staff MAY extend (`minutes`) or end it now.
 

@@ -181,10 +181,12 @@ func (a *API) requestDemo(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, demo.ErrRateLimited):
 		writeError(w, 429, "rate_limited", "You have asked for a demo recently. Check your email, or try again tomorrow")
 	case errors.Is(err, demo.ErrAtCapacity):
-		writeError(w, 503, "at_capacity", "All our demo rooms are busy. Please try again in a few minutes")
+		writeError(w, 503, "at_capacity", "All our demo rooms are busy and the waiting list is full. Please try again in a few minutes")
 	case err != nil:
 		a.log.Error("demo request failed", "error", err)
 		writeError(w, 500, "demo_failed", "We could not start your demo. Please try again in a moment")
+	case ready.Queued:
+		writeJSON(w, 202, map[string]any{"status": "queued", "queued": true, "position": ready.Position})
 	default:
 		writeJSON(w, 201, ready)
 	}

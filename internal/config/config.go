@@ -58,6 +58,10 @@ type Demo struct {
 	MaxLive     int
 	MaxPerEmail int
 	MaxPerIP    int
+	// MaxQueue is how many visitors may wait for a free slot (0: nobody waits, they are told to try later); a waiting
+	// request is dropped, with an apology, after QueueWait.
+	MaxQueue  int
+	QueueWait time.Duration
 
 	// Domain is the parent of demo addresses: <slug>.<Domain>.
 	Domain string
@@ -149,7 +153,21 @@ func load(lookup func(string) (string, bool)) (*Config, error) {
 		problems = append(problems, "CP_DEMO_TTL: must be a duration between 1m and 24h, such as 1h")
 		ttl = time.Hour
 	}
+	queueMax := 30
+	if v := get("CP_DEMO_QUEUE_MAX", ""); v != "" {
+		if n, err := strconv.Atoi(v); err != nil || n < 0 {
+			problems = append(problems, "CP_DEMO_QUEUE_MAX: must be 0 or a positive number")
+		} else {
+			queueMax = n
+		}
+	}
+	queueWait, err := time.ParseDuration(get("CP_DEMO_QUEUE_WAIT", "24h"))
+	if err != nil || queueWait < time.Minute || queueWait > 7*24*time.Hour {
+		problems = append(problems, "CP_DEMO_QUEUE_WAIT: must be a duration between 1m and 168h, such as 24h")
+		queueWait = 24 * time.Hour
+	}
 	c.Demo = Demo{
+		MaxQueue: queueMax, QueueWait: queueWait,
 		TTL: ttl, MaxLive: num("CP_MAX_DEMOS", 20), MaxPerEmail: num("CP_DEMO_PER_EMAIL_24H", 2), MaxPerIP: num("CP_DEMO_PER_IP_24H", 5),
 		Domain: need("CP_DEMO_DOMAIN"), Scheme: get("CP_DEMO_SCHEME", "https"),
 		ServerImage: need("CP_SERVER_IMAGE"), WebImage: need("CP_WEB_IMAGE"),

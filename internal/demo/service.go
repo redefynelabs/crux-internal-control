@@ -55,6 +55,17 @@ type Ready struct {
 	Email     string    `json:"login_email"`
 	Password  string    `json:"login_password"`
 	ExpiresAt time.Time `json:"expires_at"`
+
+	// Queued is true when every slot was busy: the visitor's request waits in line (Position, 1 being next) and the
+	// demo is started, and its login mailed, when a slot is free. The other fields are then empty.
+	Queued   bool `json:"-"`
+	Position int  `json:"-"`
+}
+
+// Mailer sends the visitor their login when a queued demo starts. Without one nobody can be queued.
+type Mailer interface {
+	Ready(ctx context.Context) bool
+	Queue(ctx context.Context, leadID, sentBy, to, subject, body string, after time.Time) (store.Email, error)
 }
 
 // Intake is told about arriving leads and ended demos so the sales team's follow-up can start. Nil means nothing happens.
@@ -72,6 +83,7 @@ type Entitler interface {
 type Service struct {
 	intake   Intake
 	entitler Entitler
+	mailer   Mailer
 	cfg      config.Demo
 	store    *store.Store
 	dbs      provision.Databases
@@ -84,6 +96,8 @@ type Service struct {
 	// inflight lets one demo per email provision at a time.
 	mu       sync.Mutex
 	inflight map[string]bool
+	// dispatchMu lets one dispatch pass run at a time.
+	dispatchMu sync.Mutex
 }
 
 // New returns the service.
@@ -96,6 +110,9 @@ func (s *Service) WithIntake(i Intake) *Service { s.intake = i; return s }
 
 // WithEntitlements sets who issues each demo's entitlement.
 func (s *Service) WithEntitlements(e Entitler) *Service { s.entitler = e; return s }
+
+// WithMailer sets who mails a queued visitor their login. Without it a full house turns visitors away.
+func (s *Service) WithMailer(m Mailer) *Service { s.mailer = m; return s }
 
 // WithNotifier sets who is told about new leads and demos.
 func (s *Service) WithNotifier(n notify.Notifier) *Service { s.notify = n; return s }
@@ -239,10 +256,17 @@ func (s *Service) Request(ctx context.Context, r Request) (Ready, error) {
 			return zero, ErrRateLimited
 		}
 	}
-	if n, err := s.store.CountLive(ctx); err != nil {
+	live, err := s.store.CountLive(ctx)
+	if err != nil {
 		return zero, err
-	} else if n >= s.cfg.MaxLive {
-		return zero, ErrAtCapacity
+	}
+	waiting, err := s.store.CountQueued(ctx)
+	if err != nil {
+		return zero, err
+	}
+	// Nobody jumps the line: while others wait, a newcomer joins the back even if a slot has just opened.
+	if live >= s.cfg.MaxLive || waiting > 0 {
+		return s.enqueue(ctx, r, email, waiting)
 	}
 
 	lead, created, err := s.store.UpsertLead(ctx, store.LeadInput{Name: strings.TrimSpace(r.Name), Email: email, Phone: strings.TrimSpace(r.Phone), Company: strings.TrimSpace(r.Company), Source: "website", TeamSize: r.TeamSize})
@@ -351,6 +375,14 @@ func (s *Service) End(ctx context.Context, id string) error {
 }
 
 func (s *Service) finish(ctx context.Context, d store.Demo) error {
+	if d.Status == store.DemoQueued {
+		// Never had an instance: cancel the place in line.
+		if ok, err := s.store.AbandonQueued(ctx, d.ID, "cancelled"); err != nil || !ok {
+			return err
+		}
+		_ = s.store.AddEvent(ctx, d.LeadID, "demo_cancelled", map[string]any{"slug": d.Slug})
+		return nil
+	}
 	if err := s.teardown(ctx, d); err != nil {
 		return err
 	}

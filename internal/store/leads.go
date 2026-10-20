@@ -123,6 +123,12 @@ func (s *Store) GetLead(ctx context.Context, id string) (Lead, error) {
 	return l, notFound(err)
 }
 
+// LeadByEmail returns the lead with this email address.
+func (s *Store) LeadByEmail(ctx context.Context, email string) (Lead, error) {
+	l, err := scanLead(s.pool.QueryRow(ctx, leadSelect+` WHERE lower(l.email) = $1`, normEmail(email)))
+	return l, notFound(err)
+}
+
 // LeadFilter narrows the lead list. Empty fields do not filter.
 type LeadFilter struct {
 	Status   string

@@ -301,3 +301,57 @@ func adminSession(t *testing.T, st *store.Store) string {
 	}
 	return tok
 }
+
+type okMailer struct{ ready bool }
+
+func (m okMailer) Ready(context.Context) bool { return m.ready }
+func (okMailer) Queue(context.Context, string, string, string, string, string, time.Time) (store.Email, error) {
+	return store.Email{}, nil
+}
+
+// fullServer has one demo slot and a waiting line; the first request takes the slot.
+func fullServer(t *testing.T, mailReady bool) http.Handler {
+	t.Helper()
+	cfg := &config.Config{TrustProxy: true,
+		Demo: config.Demo{TTL: time.Hour, MaxLive: 1, MaxQueue: 1, QueueWait: time.Hour, MaxPerEmail: 3, MaxPerIP: 10, Domain: "demo.example.com", Scheme: "https"}}
+	st := testutil.NewStore(t)
+	token = adminSession(t, st)
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	mailer := mail.New(st, "test-secret", log)
+	demos := demo.New(cfg.Demo, st, okDBs{}, okStacks{}, log).WithMailer(okMailer{mailReady})
+	return New(cfg, st, demos, mailer, sales.New(st, mailer, log), nil, log)
+}
+
+const second = `{"name":"Ben Rao","phone":"+91 98765 43211","email":"ben@rao.example"}`
+const third = `{"name":"Cy Rao","phone":"+91 98765 43212","email":"cy@rao.example"}`
+
+func TestAFullHouseQueuesTheVisitorAndSaysSo(t *testing.T) {
+	h := fullServer(t, true)
+	if w := do(h, "POST", "/v1/demo-requests", good); w.Code != 201 {
+		t.Fatal(w.Body)
+	}
+	w := do(h, "POST", "/v1/demo-requests", second)
+	if w.Code != 202 {
+		t.Fatalf("want 202, got %d %s", w.Code, w.Body)
+	}
+	d := data(t, w)
+	if d["queued"] != true || d["position"] != float64(1) || d["login_password"] != nil || d["url"] != nil {
+		t.Fatalf("a queued answer must carry a place and no login: %v", d)
+	}
+	// The visitor is a lead for sales even though no demo exists yet.
+	if w := do(h, "GET", "/v1/leads?q=ben%40rao.example", "", bearer()...); w.Code != 200 || !strings.Contains(w.Body.String(), "ben@rao.example") {
+		t.Fatalf("the queued visitor must be a lead: %d %s", w.Code, w.Body)
+	}
+	// The line holds one; the next visitor is turned away.
+	if w := do(h, "POST", "/v1/demo-requests", third); w.Code != 503 || !strings.Contains(w.Body.String(), "at_capacity") {
+		t.Fatalf("want 503 at_capacity, got %d %s", w.Code, w.Body)
+	}
+}
+
+func TestAFullHouseWithoutMailTurnsVisitorsAway(t *testing.T) {
+	h := fullServer(t, false)
+	_ = do(h, "POST", "/v1/demo-requests", good)
+	if w := do(h, "POST", "/v1/demo-requests", second); w.Code != 503 {
+		t.Fatalf("want 503, got %d %s", w.Code, w.Body)
+	}
+}

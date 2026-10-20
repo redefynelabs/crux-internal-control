@@ -23,7 +23,10 @@ export default async function DemosPage() {
   const [demos, leads] = await Promise.all([getDemos(), getLeads()]);
   const lead = new Map(leads.map((l) => [l.id, l]));
   const live = demos.filter((d) => d.status === "active" || d.status === "provisioning");
-  const past = demos.filter((d) => d.status === "expired" || d.status === "failed").slice(0, 25);
+  const waiting = demos
+    .filter((d) => d.status === "queued")
+    .sort((a, b) => new Date(a.queued_at ?? a.created_at).getTime() - new Date(b.queued_at ?? b.created_at).getTime());
+  const past = demos.filter((d) => d.status === "expired" || d.status === "failed" || d.status === "abandoned").slice(0, 25);
 
   const who = (d: Demo) => {
     const l = lead.get(d.lead_id);
@@ -36,7 +39,7 @@ export default async function DemosPage() {
 
   return (
     <>
-      <PageHeader title="Demos" description="Private demo instances. Each one is removed by itself when its time is up." />
+      <PageHeader title="Demos" description="Private demo instances, removed by themselves when their hour is up. When every room is busy, visitors wait in line." />
 
       <Card className="overflow-hidden">
         <div className="flex items-center justify-between px-5 pt-5">
@@ -83,6 +86,47 @@ export default async function DemosPage() {
                         )}
                         <form action={endDemo.bind(null, d.id)}>
                           <ConfirmButton message={`End the demo for ${lead.get(d.lead_id)?.name ?? d.slug} now? Its data is deleted.`}>End now</ConfirmButton>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Card className="mt-4 overflow-hidden">
+        <div className="flex items-center justify-between px-5 pt-5">
+          <h2 className="font-medium">Waiting for a free room</h2>
+          <p className="text-sm text-muted-foreground">{waiting.length} in line</p>
+        </div>
+        {waiting.length === 0 ? (
+          <EmptyState title="Nobody is waiting" text="When every room is busy, visitors wait here and are emailed their login as soon as a room is free." />
+        ) : (
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs text-muted-foreground">
+                  <th className="px-5 py-3 font-medium">Place</th>
+                  <th className="px-3 py-3 font-medium">Visitor</th>
+                  <th className="px-3 py-3 font-medium">Waiting since</th>
+                  <th className="px-3 py-3 font-medium">Gives up</th>
+                  <th className="px-5 py-3 text-right font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {waiting.map((d, i) => (
+                  <tr key={d.id}>
+                    <td className="px-5 py-3 tabular-nums">{i + 1}</td>
+                    <td className="px-3 py-3">{who(d)}</td>
+                    <td className="px-3 py-3 text-xs text-muted-foreground" title={dateTime(d.queued_at ?? d.created_at)}>{relative(d.queued_at ?? d.created_at)}</td>
+                    <td className="px-3 py-3 text-xs text-muted-foreground" title={dateTime(d.expires_at)}>{relative(d.expires_at)}</td>
+                    <td className="px-5 py-3">
+                      <div className="flex justify-end">
+                        <form action={endDemo.bind(null, d.id)}>
+                          <ConfirmButton message={`Remove ${lead.get(d.lead_id)?.name ?? "this visitor"} from the line? They are not emailed.`}>Remove</ConfirmButton>
                         </form>
                       </div>
                     </td>

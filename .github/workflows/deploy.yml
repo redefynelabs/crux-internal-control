@@ -1,0 +1,129 @@
+# Tests, builds and deploys the control plane. Push a tag such as v0.1.0:
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# Nothing is built or deployed unless the tests pass. The two images go to the GitHub Container Registry; the server then
+# pulls them over a deploy key that can run one script and nothing else (deploy/ci-deploy.sh), and goes back to the old
+# version by itself if the new one does not become healthy.
+#
+# Repository secrets: DEPLOY_SSH_KEY (private key), DEPLOY_HOST (the server), DEPLOY_HOST_KEY (its ssh-keyscan line).
+name: deploy
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Image version to deploy again (an existing tag, such as v0.1.0)
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  go-tests:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      CP_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt and vet
+        run: |
+          test -z "$(gofmt -l .)" || (gofmt -l .; exit 1)
+          go vet ./...
+      - run: go test ./...
+
+  web-checks:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+
+  images:
+    if: github.event_name == 'push'
+    needs: [go-tests, web-checks]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: image names
+        run: |
+          owner=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "CP_IMAGE=ghcr.io/$owner/erp-control-plane" >> "$GITHUB_ENV"
+          echo "ADMIN_IMAGE=ghcr.io/$owner/erp-control-plane-web" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: control plane image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.CP_IMAGE }}:${{ github.ref_name }}
+          cache-from: type=gha,scope=cp
+          cache-to: type=gha,scope=cp,mode=max
+      - name: admin app image
+        uses: docker/build-push-action@v6
+        with:
+          context: web
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.ADMIN_IMAGE }}:${{ github.ref_name }}
+          cache-from: type=gha,scope=admin
+          cache-to: type=gha,scope=admin,mode=max
+
+  deploy:
+    # Runs after a successful build, or on its own to deploy an existing version again.
+    needs: [images]
+    if: ${{ !cancelled() && (needs.images.result == 'success' || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    concurrency: deploy-control-plane
+    permissions:
+      contents: read
+      packages: read
+    env:
+      VERSION: ${{ github.event.inputs.version || github.ref_name }}
+    steps:
+      - name: deploy
+        # The forced command on the server reads the registry token from stdin, pulls, restarts and checks health.
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_HOST_KEY: ${{ secrets.DEPLOY_HOST_KEY }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_HOST_KEY" > ~/.ssh/known_hosts
+          printf '%s' "$REGISTRY_TOKEN" | ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            "root@$DEPLOY_HOST" "deploy $VERSION $ACTOR"

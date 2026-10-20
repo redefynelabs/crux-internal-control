@@ -23,7 +23,11 @@ function describe(e: LeadEvent, i: number): Item {
   const base = { key: `e${i}`, at: e.at, who: e.actor_name };
   switch (e.kind) {
     case "lead_created": return { ...base, icon: UsersIcon, title: "Lead added" };
-    case "demo_started": return { ...base, icon: ServerIcon, title: "Started a demo", text: s(d.slug) };
+    case "demo_started": return { ...base, icon: ServerIcon, title: "Started a demo", text: [s(d.slug), d.from_queue ? `after waiting ${s(d.waited)}` : ""].filter(Boolean).join(" · ") };
+    case "demo_queued": return { ...base, icon: ClockIcon, title: "Waiting for a free demo room", text: typeof d.position === "number" ? `Place ${d.position} in line` : null };
+    case "demo_queue_expired": return { ...base, icon: AlertIcon, tone: "bad", title: "Gave up waiting for a demo room", text: "They were sent an apology." };
+    case "demo_cancelled": return { ...base, icon: ServerIcon, title: "Demo request cancelled" };
+    case "demo_failed": return { ...base, icon: AlertIcon, tone: "bad", title: "The demo could not be started", text: "They were sent an apology." };
     case "demo_ended": return { ...base, icon: ServerIcon, title: "Demo ended" };
     case "status_changed": return { ...base, icon: ClockIcon, title: `Status: ${STATUS_LABEL[s(d.status) as keyof typeof STATUS_LABEL] ?? s(d.status).replace(/_/g, " ")}`, text: s(d.from) ? `from ${STATUS_LABEL[s(d.from) as keyof typeof STATUS_LABEL] ?? s(d.from)}` : null };
     case "contact_message": {

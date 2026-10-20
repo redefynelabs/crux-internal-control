@@ -85,7 +85,9 @@ func run() error {
 	mailer := mail.New(st, cfg.SecretsKey, log)
 	team := sales.New(st, mailer, log)
 	demos.WithIntake(team)
+	demos.WithMailer(mailer)
 	go demos.RunReaper(ctx, time.Minute)
+	go demos.RunDispatcher(ctx, 10*time.Second)
 	go mailer.RunWorker(ctx, 15*time.Second)
 	if err := bootstrapAdmin(ctx, st, log); err != nil {
 		return err

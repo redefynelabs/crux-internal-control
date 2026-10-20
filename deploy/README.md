@@ -63,6 +63,31 @@ requester's email and the password shown to them; an hour later its containers, 
 - **After a reboot** the demos do not come back (they never restart on their own); the control plane removes their
   leftovers within a minute and the visitors can request again.
 
+- **When every room is busy**, visitors wait in line (up to `CP_DEMO_QUEUE_MAX`, default 30, for `CP_DEMO_QUEUE_WAIT`, default 24 h)
+  and are emailed their login when a room frees up; their hour starts then. This needs working email (Settings →
+  Email): without it, visitors are told to try again later. The Demos page shows who waits and lets you remove them.
+
+## Deploy from GitHub Actions
+
+Push a tag and the control plane updates itself: `git tag v0.1.1 && git push origin v0.1.1`. The workflow
+(`.github/workflows/deploy.yml`) runs the tests, builds the two images into the GitHub Container Registry, and then logs in
+to this server with a deploy key and runs `ci-deploy.sh`, which pulls the new images, restarts the control plane and admin
+app, and goes back to the old version by itself if the new one does not answer `/healthz`. The other services (Traefik,
+Postgres, Redis) and the demos are not touched. **Run workflow → version** deploys an existing tag again (a rollback).
+
+One-time setup, already done on this server:
+
+- `ci-deploy.sh` is copied to `/opt/erp-host/ci-deploy.sh` (root, mode 755).
+- A dedicated key pair: the public half is in `/root/.ssh/authorized_keys` as
+  `command="/opt/erp-host/ci-deploy.sh",no-pty,no-port-forwarding,no-X11-forwarding,no-agent-forwarding ssh-ed25519 ...`, so the
+  key can run that script and nothing else; the private half is the repository secret `DEPLOY_SSH_KEY`.
+- Repository secrets `DEPLOY_HOST` (the server's address) and `DEPLOY_HOST_KEY` (its `ssh-keyscan -t ed25519` line, so the
+  workflow only talks to this server).
+- The server needs no registry login: the workflow passes its short-lived token on stdin for the pull and the script logs
+  out again.
+
+Changing `.env` (settings, passwords) or the compose file is still done on the server: `docker compose up -d` there.
+
 ## Risks to know
 
 - The control plane uses the Docker socket, which is the same as root on this server. Demo containers run read-only

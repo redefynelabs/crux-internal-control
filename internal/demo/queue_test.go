@@ -159,7 +159,8 @@ func TestAFreedSlotStartsTheLongestWaitingDemoAndMailsTheLogin(t *testing.T) {
 	if c.Status != store.DemoActive || !strings.HasPrefix(c.URL, "https://"+c.Slug+".demo.example.com") {
 		t.Fatalf("c is first in line and should be running, got %+v", c)
 	}
-	if !c.ExpiresAt.Equal(e.now.Add(time.Hour)) {
+	// Postgres keeps microseconds; the clock may have more.
+	if d := c.ExpiresAt.Sub(e.now.Add(time.Hour)); d < -time.Millisecond || d > time.Millisecond {
 		t.Errorf("the hour starts when the demo starts: want %v, got %v", e.now.Add(time.Hour), c.ExpiresAt)
 	}
 	if demoOf(t, e, "d@x.example").Status != store.DemoQueued {

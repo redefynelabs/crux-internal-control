@@ -23,6 +23,10 @@ services:
       - --certificatesresolvers.le.acme.email=${ACME_EMAIL}
       - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
       - --certificatesresolvers.le.acme.dnschallenge.provider=${ACME_DNS_PROVIDER}
+      # Check the challenge record against public resolvers: Docker's own resolver (127.0.0.11) caches a "not found" and
+      # the certificate then fails with "did not return the expected TXT record".
+      - --certificatesresolvers.le.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53
+      - --log.level=INFO
     # acme.env holds the DNS host's credentials for the wildcard certificate (see acme.env.example).
     env_file: [.env, acme.env]
     ports: ["80:80", "443:443"]

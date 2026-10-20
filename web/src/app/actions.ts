@@ -63,6 +63,20 @@ export async function extendDemo(id: string, form: FormData) {
   revalidatePath("/");
 }
 
+/** Deletes a lead with its history, tasks, emails and demos (admins only). A lead with a sale or a customer installation is refused. */
+export async function deleteLead(id: string) {
+  try {
+    await api(`/v1/leads/${encodeURIComponent(id)}`, { method: "DELETE" });
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409) redirect(`/leads/${encodeURIComponent(id)}?blocked=1`);
+    throw e;
+  }
+  revalidatePath("/leads");
+  revalidatePath("/demos");
+  revalidatePath("/");
+  redirect("/leads");
+}
+
 export async function endDemo(id: string) {
   await api(`/v1/demos/${encodeURIComponent(id)}`, { method: "DELETE" });
   revalidatePath("/demos");

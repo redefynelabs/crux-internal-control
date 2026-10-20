@@ -130,6 +130,51 @@ func (a *API) createLead(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, l)
 }
 
+// deleteLead removes a lead for good: its history, tasks, emails and demos go with it. A live demo is ended first. It
+// refuses a lead that has a sale or a customer installation, so revenue and licences never lose their owner; mark such a
+// lead lost instead.
+func (a *API) deleteLead(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	l, err := a.store.GetLead(ctx, r.PathValue("id"))
+	if notFoundLead(w, err) {
+		return
+	}
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	sales, installs, err := a.store.LeadDeleteBlockers(ctx, l.ID)
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	if sales > 0 || installs > 0 {
+		writeError(w, 409, "has_records", "This lead has a sale or a customer installation, so it cannot be deleted. Mark it lost instead")
+		return
+	}
+	live, err := a.store.LiveDemoIDs(ctx, l.ID)
+	if err != nil {
+		a.internal(w, err)
+		return
+	}
+	for _, id := range live {
+		// Remove the containers and database first: a demo row that is gone could never be cleaned up by the reaper.
+		if err := a.demos.End(ctx, id); err != nil {
+			a.internal(w, err)
+			return
+		}
+	}
+	if err := a.store.DeleteLead(ctx, l.ID); err != nil {
+		a.internal(w, err)
+		return
+	}
+	p := who(r)
+	if err := a.store.Audit(ctx, p.User.ID, p.User.Email, "", "lead.deleted", map[string]any{"name": l.Name, "email": l.Email, "company": l.Company, "status": l.Status}); err != nil {
+		a.log.Warn("could not record the lead deletion", "error", err)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (a *API) getLead(w http.ResponseWriter, r *http.Request) {
 	l, err := a.store.GetLead(r.Context(), r.PathValue("id"))
 	if notFoundLead(w, err) {

@@ -33,6 +33,7 @@ func (a *API) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /v1/leads", staff(a.createLead))
 	mux.HandleFunc("GET /v1/leads/{id}", staff(a.getLead))
 	mux.HandleFunc("PATCH /v1/leads/{id}", staff(a.patchLead))
+	mux.HandleFunc("DELETE /v1/leads/{id}", adminOnly(a.deleteLead))
 	mux.HandleFunc("POST /v1/leads/{id}/notes", staff(a.addNote))
 	mux.HandleFunc("POST /v1/leads/{id}/calls", staff(a.logCall))
 	mux.HandleFunc("POST /v1/leads/{id}/emails", staff(a.sendLeadEmail))

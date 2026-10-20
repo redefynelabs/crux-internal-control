@@ -17,3 +17,10 @@ A task belongs to a lead and has a title, a kind (`call`, `email` or `other`), a
 
 ### Requirement: Email
 Sending email to a lead SHALL use the saved SMTP settings through a queue, retried up to three times, and failures SHALL show on the lead and the overview. The SMTP password SHALL be stored encrypted with `CP_SECRETS_KEY` and never shown. Templates SHALL support `{{name}}`, `{{first_name}}`, `{{company}}`, `{{demo_url}}`, `{{owner}}`, `{{signature}}`.
+
+### Requirement: Deleting a lead
+An admin (not a sales person) SHALL be able to delete a lead (`DELETE /v1/leads/{id}`, the **Delete lead** button on the lead page, after a confirmation). Deleting SHALL end any running or waiting demo first, then remove the lead with its history, tasks, emails, demos and the demo installation records, and SHALL write `lead.deleted` to the audit log. A lead that has a sale or a customer (non-demo) installation SHALL be refused with `409 has_records`, so revenue and licences never lose their owner.
+
+#### Scenario: Test lead
+- **WHEN** an admin deletes a lead that has a running demo
+- **THEN** the demo's containers and database are removed, the lead and its records are gone, and the deletion is in the audit log

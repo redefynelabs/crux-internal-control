@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { extendDemo } from "@/app/actions";
+import { deleteLead, extendDemo } from "@/app/actions";
+import { ConfirmButton } from "@/components/confirm-button";
 import { ArrowLeftIcon, ExternalIcon } from "@/components/icons";
 import { Countdown } from "@/components/countdown";
 import { Owner } from "@/components/owner";
@@ -28,8 +29,9 @@ function attribution(events: LeadEvent[]): [string, string][] {
   return [];
 }
 
-export default async function LeadPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function LeadPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ blocked?: string }> }) {
   const { id } = await params;
+  const { blocked } = await searchParams;
   let data;
   try {
     data = await getLead(id);
@@ -65,6 +67,12 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
           ) : null}
         </div>
       </div>
+
+      {blocked && (
+        <p role="alert" className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          This lead has a sale or a customer installation, so it cannot be deleted. Mark it lost instead.
+        </p>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
@@ -152,6 +160,16 @@ export default async function LeadPage({ params }: { params: Promise<{ id: strin
               </ul>
             )}
           </Card>
+
+          {me.role === "admin" && !sale && (
+            <Card className="p-5">
+              <h2 className="font-medium">Delete lead</h2>
+              <p className="mt-2 text-sm text-muted-foreground">Removes this lead for good with its history, tasks, emails and demos. A running demo is ended first. Use it for test or junk leads.</p>
+              <form action={deleteLead.bind(null, lead.id)} className="mt-3">
+                <ConfirmButton message={`Delete ${lead.name} and everything recorded about them? This cannot be undone.`}>Delete lead</ConfirmButton>
+              </form>
+            </Card>
+          )}
         </div>
       </div>
     </>

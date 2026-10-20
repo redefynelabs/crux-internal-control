@@ -129,6 +129,54 @@ func (s *Store) LeadByEmail(ctx context.Context, email string) (Lead, error) {
 	return l, notFound(err)
 }
 
+// LeadDeleteBlockers counts what makes deleting a lead unsafe: sales (the revenue record would lose its customer) and
+// installations that are not demos (a customer's licence would lose its owner).
+func (s *Store) LeadDeleteBlockers(ctx context.Context, id string) (sales, installs int, err error) {
+	err = s.pool.QueryRow(ctx, `
+		SELECT (SELECT count(*) FROM sales WHERE lead_id = $1),
+		       (SELECT count(*) FROM installations WHERE lead_id = $1 AND kind <> 'demo')`, id).Scan(&sales, &installs)
+	return
+}
+
+// LiveDemoIDs returns the lead's demos that still hold a room or a place in line.
+func (s *Store) LiveDemoIDs(ctx context.Context, leadID string) ([]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id FROM demos WHERE lead_id = $1 AND status IN ('queued', 'provisioning', 'active')`, leadID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// DeleteLead removes the lead with its history, tasks, emails and demos, and the installation records the demos made.
+// The caller has ended any live demo and checked LeadDeleteBlockers first.
+func (s *Store) DeleteLead(ctx context.Context, id string) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // a no-op after commit
+	if _, err := tx.Exec(ctx, `DELETE FROM installations WHERE lead_id = $1 AND kind = 'demo'`, id); err != nil {
+		return err
+	}
+	tag, err := tx.Exec(ctx, `DELETE FROM leads WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return tx.Commit(ctx)
+}
+
 // LeadFilter narrows the lead list. Empty fields do not filter.
 type LeadFilter struct {
 	Status   string

@@ -169,3 +169,29 @@ func TestTheLogoIsAPNG(t *testing.T) {
 		t.Errorf("the embedded logo must be a PNG, got %d bytes", len(b))
 	}
 }
+
+func TestAnEyebrowIsAnUppercaseLabelAboveTheHeading(t *testing.T) {
+	r := compose(`[[eyebrow: Demo ready]]<h1>Your own copy is live</h1><p>This is a sentence that is long enough to preview.</p>`, testVars)
+	if !strings.Contains(r.HTML, "text-transform:uppercase") || !strings.Contains(r.HTML, ">Demo ready</p>") {
+		t.Errorf("the HTML shows the label in small uppercase")
+	}
+	if !strings.HasPrefix(r.Text, "DEMO READY\n") {
+		t.Errorf("the text copy leads with the label in capitals, got %q", r.Text[:20])
+	}
+	if r := compose(`[[eyebrow:    ]]<p>Only a body, long enough to be a sentence.</p>`, testVars); strings.Contains(r.HTML, "uppercase;color") {
+		t.Errorf("an empty label is left out")
+	}
+}
+
+// The look follows the website: a pill button, square bordered boxes and the site's own accent blue.
+func TestTheDesignFollowsTheWebsite(t *testing.T) {
+	r := compose(`[[button: Go | https://x.example]][[details: A = b]][[steps: one]]`, testVars)
+	for _, want := range []string{"border-radius:999px", "#2563eb", "border:1px solid #e5e5e5"} {
+		if !strings.Contains(r.HTML, want) {
+			t.Errorf("the HTML should contain %q", want)
+		}
+	}
+	if strings.Contains(r.HTML, "border-radius:6px") || strings.Contains(r.HTML, "border-radius:12px") {
+		t.Errorf("only the button is rounded; boxes are square like the site")
+	}
+}

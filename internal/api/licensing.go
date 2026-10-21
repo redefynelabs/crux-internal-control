@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -100,6 +101,7 @@ func (a *API) licensingRoutes(mux *http.ServeMux, staff, adminOnly func(http.Han
 	mux.HandleFunc("POST /v1/installations/{id}/revoke", adminOnly(a.revoke))
 	mux.HandleFunc("GET /v1/releases", staff(a.listReleases))
 	mux.HandleFunc("POST /v1/releases", adminOnly(a.publishRelease))
+	mux.HandleFunc("POST /v1/ci/releases", a.releaseFromPipeline)
 	mux.HandleFunc("POST /v1/releases/{id}/withdraw", adminOnly(a.withdrawRelease))
 	mux.HandleFunc("GET /v1/audit", staff(a.listAudit))
 }
@@ -503,6 +505,22 @@ func (in releaseIn) validate() map[string]string {
 }
 
 func (a *API) publishRelease(w http.ResponseWriter, r *http.Request) {
+	a.createRelease(w, r, false)
+}
+
+// releaseFromPipeline is how the ERP's release workflow registers a version: a bearer token that can do this and nothing
+// else. Sending a version again answers with the release already there, so a retried workflow is harmless.
+func (a *API) releaseFromPipeline(w http.ResponseWriter, r *http.Request) {
+	want := a.cfg.ReleaseToken
+	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if want == "" || subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
+		writeError(w, 401, "unauthorized", "The release token is not valid")
+		return
+	}
+	a.createRelease(w, r, true)
+}
+
+func (a *API) createRelease(w http.ResponseWriter, r *http.Request, pipeline bool) {
 	if !a.needIssuer(w) {
 		return
 	}
@@ -531,9 +549,15 @@ func (a *API) publishRelease(w http.ResponseWriter, r *http.Request) {
 	rel, err := a.store.CreateRelease(r.Context(), store.Release{
 		Version: in.Version, Channel: in.Channel, PublishedAt: at, Notes: in.Notes, HasMigrations: in.HasMigrations,
 		MinFromVersion: in.MinFromVersion, Images: in.Images, Manifest: string(file),
-	}, who(r).User.ID)
+	}, who(r).User.ID) // empty for the pipeline: created_by stays null
 	var pg *pgconn.PgError
 	if errors.As(err, &pg) && pg.Code == "23505" {
+		if pipeline {
+			if have, err := a.store.ReleaseByVersion(r.Context(), in.Version); err == nil {
+				writeJSON(w, 200, have)
+				return
+			}
+		}
 		writeError(w, 409, "conflict", "That version was already published", map[string]string{"version": "Already published"})
 		return
 	}
@@ -541,7 +565,7 @@ func (a *API) publishRelease(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, err)
 		return
 	}
-	a.audit(r, "", "release_published", map[string]any{"version": rel.Version, "channel": rel.Channel})
+	a.audit(r, "", "release_published", map[string]any{"version": rel.Version, "channel": rel.Channel, "pipeline": pipeline})
 	writeJSON(w, 201, rel)
 }
 

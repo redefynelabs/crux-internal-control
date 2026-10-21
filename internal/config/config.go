@@ -37,6 +37,9 @@ type Config struct {
 	EntitlementKeyFile string
 
 	Install Install
+	// ReleaseToken (CP_RELEASE_TOKEN) lets the ERP's release pipeline register a release at POST /v1/ci/releases and do nothing
+	// else. Empty turns that route off. At least 32 characters.
+	ReleaseToken string
 
 	Demo Demo
 }
@@ -140,9 +143,13 @@ func load(lookup func(string) (string, bool)) (*Config, error) {
 		TrustProxy:         get("CP_TRUST_PROXY", "") == "true",
 		NotifyWebhookURL:   get("CP_NOTIFY_WEBHOOK_URL", ""),
 		EntitlementKeyFile: get("CP_ENTITLEMENT_KEY_FILE", ""),
+		ReleaseToken:       get("CP_RELEASE_TOKEN", ""),
 	}
 	if len(c.SecretsKey) > 0 && len(c.SecretsKey) < 32 {
 		problems = append(problems, "CP_SECRETS_KEY: must be at least 32 characters")
+	}
+	if t := get("CP_RELEASE_TOKEN", ""); t != "" && len(t) < 32 {
+		problems = append(problems, "CP_RELEASE_TOKEN: must be at least 32 characters")
 	}
 	for _, o := range strings.Split(get("CP_ALLOWED_ORIGINS", ""), ",") {
 		if o = strings.TrimRight(strings.TrimSpace(o), "/"); o != "" {

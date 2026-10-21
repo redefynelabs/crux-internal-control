@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/redefynelabs/erp-control-plane/internal/config"
 	"github.com/redefynelabs/erp-control-plane/internal/entitle"
 	"github.com/redefynelabs/erp-control-plane/internal/store"
 )
@@ -438,5 +439,42 @@ func TestDatesAreTheVendorsNotTheDatabaseSessions(t *testing.T) {
 	_ = json.Unmarshal(do(h, "GET", "/v1/installations", "", bearer()...).Body.Bytes(), &out)
 	if len(out.Data) != 1 || out.Data[0].UpdatesUntil != "2027-12-31T23:59:59Z" {
 		t.Fatalf("an end date must come back as the same UTC moment, not shifted into the database's zone: %+v", out.Data)
+	}
+}
+
+func TestPipelineRegistersReleasesWithItsOwnToken(t *testing.T) {
+	const pipelineToken = "pipeline-token-pipeline-token-0123456789"
+	h, _, st := entitlementServerWith(t, func(c *config.Config) { c.ReleaseToken = pipelineToken })
+	rel := `{"version":"v2.1.0","channel":"stable","has_migrations":true,"notes":"n","images":{"server":"reg/erp-server@sha256:aa","web":"reg/erp-web@sha256:bb"}}`
+	pipeline := []string{"Authorization", "Bearer " + pipelineToken}
+
+	if w := do(h, "POST", "/v1/ci/releases", rel); w.Code != 401 {
+		t.Fatalf("no token: %d", w.Code)
+	}
+	if w := do(h, "POST", "/v1/ci/releases", rel, bearer()...); w.Code != 401 {
+		t.Fatalf("a staff session is not the pipeline token: %d", w.Code)
+	}
+	if w := do(h, "GET", "/v1/releases", "", pipeline...); w.Code != 401 {
+		t.Fatalf("the pipeline token reaches nothing else: %d", w.Code)
+	}
+	if w := do(h, "POST", "/v1/ci/releases", rel, pipeline...); w.Code != 201 {
+		t.Fatalf("register: %d %s", w.Code, w.Body)
+	}
+	if w := do(h, "POST", "/v1/ci/releases", rel, pipeline...); w.Code != 200 {
+		t.Fatalf("the same version again is a no-op: %d %s", w.Code, w.Body)
+	}
+	if w := do(h, "POST", "/v1/releases", rel, bearer()...); w.Code != 409 {
+		t.Fatalf("staff still get a conflict: %d", w.Code)
+	}
+	all, err := st.ListReleases(t.Context())
+	if err != nil || len(all) != 1 || all[0].Version != "2.1.0" {
+		t.Fatalf("one release: %+v %v", all, err)
+	}
+}
+
+func TestPipelineRouteIsOffWithoutAToken(t *testing.T) {
+	h, _, _ := entitlementServer(t)
+	if w := do(h, "POST", "/v1/ci/releases", `{}`, "Authorization", "Bearer "); w.Code != 401 {
+		t.Fatalf("no token configured: %d", w.Code)
 	}
 }

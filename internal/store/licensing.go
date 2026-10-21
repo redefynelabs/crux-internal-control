@@ -146,6 +146,12 @@ func (s *Store) GetRelease(ctx context.Context, id string) (Release, error) {
 	return r, notFound(err)
 }
 
+// ReleaseByVersion returns the release published under a version (without a leading v).
+func (s *Store) ReleaseByVersion(ctx context.Context, version string) (Release, error) {
+	r, err := scanRelease(s.pool.QueryRow(ctx, `SELECT `+releaseCols+` FROM releases r WHERE r.version = $1`, version))
+	return r, notFound(err)
+}
+
 // ListReleases returns every release, newest first.
 func (s *Store) ListReleases(ctx context.Context) ([]Release, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+releaseCols+` FROM releases r ORDER BY r.published_at DESC, r.created_at DESC LIMIT 500`)

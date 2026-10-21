@@ -155,7 +155,7 @@ against a fake command runner.
 - **Activation code:** `POST /v1/installations/{id}/activation` (admin) makes a one-time code, valid 7 days, stored only as a hash. `POST /v1/activate {code}` (public, rate limited) returns the installation id, secret, public key and first file.
 - **Check-in:** `POST /v1/sync` (signed like the other installation calls) takes `applied_version`, `server_version`, `server_build` and answers with the key status, the newest file if the installation lacks it, and the releases its AMC covers. `GET /v1/entitlements/current` still works for older servers and counts as a check.
 - **Access:** suspend (read-only, file carries it), resume, revoke (nothing more is sent). Nothing is deleted.
-- **Releases:** publish a version with images by digest; the manifest is signed with the entitlement key. Beta is never offered; withdrawn releases stop being offered.
+- **Releases:** publish a version with images by digest; the manifest is signed with the entitlement key. Beta is never offered; withdrawn releases stop being offered. The ERP's release workflow does this by itself: it calls `POST /v1/ci/releases` with `CP_RELEASE_TOKEN` (a bearer token that can do only this; sending a version again changes nothing). See `erp-software/docs/Hosting.md`, "Releasing to the demos and to customers".
 - **Activity:** an audit trail of who changed what.
 
 Needs an ERP release that reads `license`, `updates_until` and `suspended` before such files are issued to it. The ERP's activation client and 15 minute check are not built yet (`erp-software/openspec/changes/add-activation`).

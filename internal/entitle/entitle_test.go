@@ -23,8 +23,8 @@ func testSigner(t *testing.T) *Signer {
 
 func TestSignedFileVerifiesAgainstThePublicKey(t *testing.T) {
 	s := testSigner(t)
-	p := Payload{Version: 1, IssuedAt: time.Now().UTC(), Customer: Customer{ID: "c", Name: "Acme"}, Template: "clinic",
-		Apps: []string{"sales", "crm"}, Features: []string{"sales.quotes", "clients.documents"}}
+	p := Payload{Version: 1, IssuedAt: time.Now().UTC(), Customer: Customer{ID: "c", Name: "Acme"}, Template: "clinic", Edition: Services,
+		Apps: []string{"pms", "crm"}, Features: []string{"pms.tasks", "clients.documents"}}
 	if err := p.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -52,14 +52,15 @@ func TestSignedFileVerifiesAgainstThePublicKey(t *testing.T) {
 }
 
 func TestValidateRefusals(t *testing.T) {
-	base := Payload{Version: 1, IssuedAt: time.Now(), Template: "agency", Apps: []string{"crm"}, Features: []string{"crm.leads"}}
+	base := Payload{Version: 1, IssuedAt: time.Now(), Template: "agency", Edition: Services, Apps: []string{"crm"}, Features: []string{"crm.leads"}}
 	past := time.Now().Add(-time.Hour)
 	cases := map[string]func(p *Payload){
 		"apps":       func(p *Payload) { p.Apps = []string{"nope"} },
-		"features":   func(p *Payload) { p.Features = []string{"sales.quotes"} }, // app not granted
+		"features":   func(p *Payload) { p.Features = []string{"accounting.estimates"} }, // app not granted
 		"template":   func(p *Payload) { p.Template = "" },
 		"labels":     func(p *Payload) { p.Labels = map[string]Label{"client": {Singular: "", Plural: "X"}} },
 		"expires_at": func(p *Payload) { p.ExpiresAt = &past },
+		"edition":    func(p *Payload) { p.Edition = "" },
 	}
 	if err := (&base).Validate(); err != nil {
 		t.Fatalf("a valid payload: %v", err)
@@ -182,5 +183,127 @@ func TestActivationCodes(t *testing.T) {
 	other, otherHash, _, _ := NewActivationCode()
 	if other == code || otherHash == hash {
 		t.Error("codes repeat")
+	}
+}
+
+func TestAPayloadIsOneEdition(t *testing.T) {
+	for _, tc := range []struct {
+		name, field, want string
+		edit              func(p *Payload)
+	}{
+		{"inventory in services", "apps", "inventory is not part of the services edition", func(p *Payload) {
+			p.Apps = []string{"crm", "inventory"}
+		}},
+		{"projects in goods", "apps", "pms is not part of the goods edition", func(p *Payload) {
+			p.Edition, p.Template, p.Apps = Goods, "wholesale", []string{"crm", "pms"}
+		}},
+		{"project billing in goods", "features", "accounting.projectbilling is not part of the goods edition", func(p *Payload) {
+			p.Edition, p.Template, p.Apps, p.Features = Goods, "wholesale", []string{"accounting"}, []string{"accounting.projectbilling"}
+		}},
+		{"a template of the other edition", "template", "The wholesale template is not part of the services edition", func(p *Payload) {
+			p.Template = "wholesale"
+		}},
+	} {
+		p := Payload{Version: 1, IssuedAt: time.Now(), Template: "agency", Edition: Services, Apps: []string{"crm"}, Features: []string{"crm.leads"}}
+		tc.edit(&p)
+		pr, ok := p.Validate().(*Problem)
+		if !ok || pr.Fields[tc.field] != tc.want {
+			t.Errorf("%s: %v", tc.name, pr)
+		}
+	}
+	goods := Payload{Version: 1, IssuedAt: time.Now(), Template: "wholesale", Edition: Goods, Apps: []string{"crm", "inventory", "accounting"}, Features: []string{"inventory.stock"}}
+	if err := goods.Validate(); err != nil {
+		t.Fatalf("goods: %v", err.(*Problem).Fields)
+	}
+}
+
+func TestAFileFromBeforeEditionsIsIssuedAgainInOne(t *testing.T) {
+	for want, apps := range map[string][]string{Services: {"crm", "pms"}, Goods: {"crm", "inventory"}} {
+		if got := DraftOf(Payload{Template: "agency", Apps: apps}).Edition; got != want {
+			t.Errorf("%v: %s", apps, got)
+		}
+	}
+	if got := EditionOf([]string{"crm"}, "wholesale"); got != Goods {
+		t.Errorf("by template: %s", got)
+	}
+}
+
+func TestTheCatalogKnowsTheEditionOfEveryTemplate(t *testing.T) {
+	for _, tpl := range Catalog.Templates {
+		if tpl.Edition != Services && tpl.Edition != Goods {
+			t.Errorf("%s: edition %q", tpl.ID, tpl.Edition)
+		}
+		for _, a := range tpl.Apps {
+			if !InEdition(a, tpl.Edition) {
+				t.Errorf("%s: %s is not part of %s", tpl.ID, a, tpl.Edition)
+			}
+		}
+	}
+}
+
+// editions.json is written by the ERP (erp-software/server/internal/app/editions): its apps and the editions each may
+// be sold in. The catalog must name the same, or the vendor could issue a file the ERP refuses.
+func TestTheCatalogMatchesTheERPsEditions(t *testing.T) {
+	raw, err := os.ReadFile("editions.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var erp []struct {
+		Name     string   `json:"name"`
+		Editions []string `json:"editions"`
+		Features []struct {
+			Name     string   `json:"name"`
+			Editions []string `json:"editions"`
+		} `json:"features"`
+	}
+	if err := json.Unmarshal(raw, &erp); err != nil {
+		t.Fatal(err)
+	}
+	if len(erp) != len(Catalog.Apps) {
+		t.Fatalf("the ERP has %d apps, the catalog %d", len(erp), len(Catalog.Apps))
+	}
+	for _, e := range erp {
+		i := slices.IndexFunc(Catalog.Apps, func(a App) bool { return a.Name == e.Name })
+		if i < 0 || !slices.Equal(Catalog.Apps[i].Editions, e.Editions) {
+			t.Errorf("%s: the ERP sells it in %v", e.Name, e.Editions)
+			continue
+		}
+		// The features with an edition of their own, both ways.
+		var own []string
+		for _, f := range Catalog.Apps[i].Features {
+			if len(f.Editions) > 0 {
+				own = append(own, f.Name)
+			}
+		}
+		for _, f := range e.Features {
+			j := slices.IndexFunc(Catalog.Apps[i].Features, func(x Feature) bool { return x.Name == f.Name })
+			if j < 0 || !slices.Equal(Catalog.Apps[i].Features[j].Editions, f.Editions) {
+				t.Errorf("%s: the ERP sells it in %v", f.Name, f.Editions)
+			}
+			own = slices.DeleteFunc(own, func(n string) bool { return n == f.Name })
+		}
+		if len(own) > 0 {
+			t.Errorf("%s: the catalog gives %v an edition the ERP does not", e.Name, own)
+		}
+	}
+}
+
+func TestAProjectBillingFeatureIsServicesOnly(t *testing.T) {
+	if !InEdition("accounting.projectbilling", Services) || InEdition("accounting.projectbilling", Goods) {
+		t.Fatal("accounting.projectbilling must be in services only")
+	}
+	if !InEdition("accounting.invoices", Goods) {
+		t.Fatal("accounting.invoices follows its app")
+	}
+}
+
+// The issue form reads every list of the catalog; a null list breaks the page.
+func TestTheCatalogHasNoNullLists(t *testing.T) {
+	b, err := json.Marshal(Catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), ":null") {
+		t.Fatalf("catalog JSON has a null list: %s", b)
 	}
 }

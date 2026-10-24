@@ -224,6 +224,8 @@ export interface Analytics {
 export interface EntitlementFeature {
   name: string;
   label: string;
+  /** Set when the feature is sold in fewer editions than its app. */
+  editions?: Edition[];
 }
 /** A business outcome the vendor ticks; it stands for apps and features. */
 export interface EntitlementGroup {
@@ -233,11 +235,14 @@ export interface EntitlementGroup {
   apps: string[];
   features: string[];
 }
+/** The two products the ERP is sold as; an installation has one. */
+export type Edition = "services" | "goods";
 export interface EntitlementCatalog {
   core: EntitlementFeature[];
+  editions: { key: Edition; label: string; text: string }[];
   groups: EntitlementGroup[];
-  apps: { name: string; label: string; features: EntitlementFeature[]; needs?: string[] }[];
-  templates: { id: string; name: string; summary: string; apps: string[]; features: string[]; labels: Record<string, { singular: string; plural: string }> }[];
+  apps: { name: string; label: string; features: EntitlementFeature[]; needs?: string[]; editions: Edition[] }[];
+  templates: { id: string; name: string; summary: string; edition: Edition; apps: string[]; features: string[]; labels: Record<string, { singular: string; plural: string }> }[];
   records: { key: string; singular: string; plural: string }[];
 }
 export interface CatalogResponse {
@@ -263,6 +268,8 @@ export interface Installation {
   /** The newest file issued; version 0 means none yet. */
   version: number;
   template: string;
+  /** The newest file's edition; empty for one issued before editions. */
+  edition: Edition | "";
   expires_at: string | null;
   issued_at: string | null;
   pending_requests: number;
@@ -325,6 +332,8 @@ export interface EntitlementPayload {
   updates_until?: string;
   suspended?: boolean;
   template: string;
+  /** Absent from a file issued before editions. */
+  edition?: Edition;
   apps: string[];
   features: string[];
   labels: Record<string, { singular: string; plural: string }>;

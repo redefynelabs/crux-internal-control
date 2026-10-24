@@ -2,10 +2,10 @@
   {
     "id": "agency",
     "name": "Agency and services",
-    "summary": "Clients, projects and timesheets. The words and defaults the product starts with, plus a review step and an agency sales pipeline.",
+    "summary": "Clients, projects and timesheets. The words and defaults the product starts with, plus a review step for projects.",
+    "edition": "services",
     "apps": [
       "crm",
-      "sales",
       "pms",
       "hr",
       "accounting"
@@ -16,16 +16,13 @@
       "crm.leads",
       "crm.followups",
       "crm.meetings",
-      "crm.deals",
-      "sales.products",
-      "sales.quotes",
-      "sales.invoices",
-      "sales.recurring",
-      "sales.reports",
       "pms.tasks",
       "hr.attendance",
       "hr.leave",
       "hr.timesheets",
+      "accounting.estimates",
+      "accounting.invoices",
+      "accounting.recurring",
       "accounting.receipts",
       "accounting.expenses",
       "accounting.reports"
@@ -34,11 +31,6 @@
       "client": {
         "singular": "Client",
         "plural": "Clients",
-        "slug": ""
-      },
-      "deal": {
-        "singular": "Deal",
-        "plural": "Deals",
         "slug": ""
       },
       "lead": {
@@ -57,8 +49,8 @@
         "slug": ""
       },
       "quote": {
-        "singular": "Quote",
-        "plural": "Quotes",
+        "singular": "Estimate",
+        "plural": "Estimates",
         "slug": ""
       },
       "task": {
@@ -68,18 +60,18 @@
       }
     },
     "fields": 2,
-    "statuses": 1,
-    "pipelines": 1
+    "statuses": 1
   },
   {
     "id": "clinic",
     "name": "Clinic",
-    "summary": "Patients and cases. Patient details that only managers see, a visit flow for cases, and a treatment plan pipeline.",
+    "summary": "Patients and cases. Patient details that only managers see, and a visit flow for cases.",
+    "edition": "services",
     "apps": [
       "crm",
-      "sales",
       "pms",
       "hr",
+      "payroll",
       "accounting"
     ],
     "features": [
@@ -88,14 +80,11 @@
       "crm.leads",
       "crm.followups",
       "crm.meetings",
-      "sales.products",
-      "sales.invoices",
-      "sales.reports",
       "pms.tasks",
       "hr.attendance",
       "hr.shifts",
       "hr.leave",
-      "hr.payroll",
+      "accounting.invoices",
       "accounting.receipts",
       "accounting.expenses",
       "accounting.reports"
@@ -104,11 +93,6 @@
       "client": {
         "singular": "Patient",
         "plural": "Patients",
-        "slug": ""
-      },
-      "deal": {
-        "singular": "Treatment plan",
-        "plural": "Treatment plans",
         "slug": ""
       },
       "lead": {
@@ -127,8 +111,8 @@
         "slug": ""
       },
       "quote": {
-        "singular": "Quote",
-        "plural": "Quotes",
+        "singular": "Estimate",
+        "plural": "Estimates",
         "slug": ""
       },
       "task": {
@@ -138,19 +122,18 @@
       }
     },
     "fields": 7,
-    "statuses": 7,
-    "pipelines": 1
+    "statuses": 7
   },
   {
     "id": "trades",
     "name": "Trades and field service",
-    "summary": "Customers, jobs and work orders. Site details on customers and jobs, a job flow from booking to invoice, and a pipeline for commercial bids.",
+    "summary": "Customers and jobs. Site details on customers and jobs, and a job flow from booking to invoice.",
+    "edition": "services",
     "apps": [
       "crm",
-      "sales",
       "pms",
-      "inventory",
       "hr",
+      "payroll",
       "accounting"
     ],
     "features": [
@@ -158,17 +141,12 @@
       "crm.contacts",
       "crm.leads",
       "crm.followups",
-      "sales.products",
-      "sales.quotes",
-      "sales.orders",
-      "sales.invoices",
-      "sales.recurring",
       "pms.tasks",
-      "inventory.stock",
-      "inventory.purchasing",
       "hr.shifts",
       "hr.timesheets",
-      "hr.payroll",
+      "accounting.estimates",
+      "accounting.invoices",
+      "accounting.recurring",
       "accounting.receipts",
       "accounting.expenses",
       "accounting.reports"
@@ -177,11 +155,6 @@
       "client": {
         "singular": "Customer",
         "plural": "Customers",
-        "slug": ""
-      },
-      "deal": {
-        "singular": "Opportunity",
-        "plural": "Opportunities",
         "slug": ""
       },
       "lead": {
@@ -211,7 +184,69 @@
       }
     },
     "fields": 6,
-    "statuses": 7,
-    "pipelines": 1
+    "statuses": 7
+  },
+  {
+    "id": "wholesale",
+    "name": "Trading and distribution",
+    "summary": "Customers, products and orders. Stock in warehouses, purchasing from vendors, and customer terms on each account.",
+    "edition": "goods",
+    "apps": [
+      "crm",
+      "inventory",
+      "hr",
+      "accounting"
+    ],
+    "features": [
+      "clients.documents",
+      "crm.contacts",
+      "crm.leads",
+      "crm.followups",
+      "inventory.products",
+      "inventory.orders",
+      "inventory.stock",
+      "inventory.purchasing",
+      "hr.attendance",
+      "hr.leave",
+      "accounting.estimates",
+      "accounting.invoices",
+      "accounting.receipts",
+      "accounting.expenses",
+      "accounting.reports"
+    ],
+    "labels": {
+      "client": {
+        "singular": "Customer",
+        "plural": "Customers",
+        "slug": ""
+      },
+      "lead": {
+        "singular": "Enquiry",
+        "plural": "Enquiries",
+        "slug": ""
+      },
+      "order": {
+        "singular": "Sales order",
+        "plural": "Sales orders",
+        "slug": ""
+      },
+      "project": {
+        "singular": "Project",
+        "plural": "Projects",
+        "slug": ""
+      },
+      "quote": {
+        "singular": "Quotation",
+        "plural": "Quotations",
+        "slug": ""
+      },
+      "task": {
+        "singular": "Task",
+        "plural": "Tasks",
+        "slug": ""
+      }
+    },
+    "fields": 3,
+    "statuses": 2
   }
 ]

@@ -342,18 +342,18 @@ func TestADemoShowsOnlyTheAppsTheVisitorPicked(t *testing.T) {
 	}
 	for _, m := range e.dbs.modules {
 		installed, disabled := m[0], m[1]
-		for _, want := range []string{"crm", "sales", "inventory", "hr"} {
+		for _, want := range []string{"crm", "accounting", "inventory", "hr"} {
 			if !slices.Contains(installed, want) {
 				t.Errorf("%s should be installed: %v", want, installed)
 			}
 		}
-		for _, no := range []string{"pms", "accounting"} {
+		for _, no := range []string{"pms", "payroll"} {
 			if slices.Contains(installed, no) {
 				t.Errorf("%s was not asked for: %v", no, installed)
 			}
 		}
-		// People & HR was picked without Payroll, so payroll is off inside the hr app.
-		if !slices.Contains(disabled, "hr.payroll") || slices.Contains(disabled, "hr.attendance") {
+		// Every installed app was picked whole, so nothing inside them is switched off.
+		if len(disabled) != 0 {
 			t.Errorf("only the parts of an installed app that were not picked are switched off: %v", disabled)
 		}
 	}
@@ -361,7 +361,7 @@ func TestADemoShowsOnlyTheAppsTheVisitorPicked(t *testing.T) {
 
 func TestPayrollBringsPeopleAndHR(t *testing.T) {
 	_, _, apps, features := selection([]string{"payroll"})
-	if !slices.Contains(apps, "hr") || !slices.Contains(features, "hr.payroll") || !slices.Contains(features, "hr.attendance") {
+	if !slices.Contains(apps, "hr") || !slices.Contains(apps, "payroll") || !slices.Contains(features, "hr.attendance") {
 		t.Fatalf("payroll reads attendance, so people comes with it: %v %v", apps, features)
 	}
 }
@@ -384,5 +384,38 @@ func TestNoPicksMeansEverything(t *testing.T) {
 	}
 	if len(e.dbs.modules) != 0 {
 		t.Fatalf("a demo with no picks keeps every app: %v", e.dbs.modules)
+	}
+}
+
+func TestADemoShowsOneEdition(t *testing.T) {
+	for _, tc := range []struct {
+		asked   string
+		picked  []string
+		edition string
+		kept    []string
+	}{
+		{"", []string{"projects", "inventory"}, "services", []string{"projects"}},
+		{"", []string{"inventory", "sales"}, "goods", []string{"inventory", "sales"}},
+		{"goods", []string{"projects", "people"}, "goods", []string{"people"}},
+		{"", nil, "services", nil},
+	} {
+		ed := editionOf(tc.asked, tc.picked)
+		if got := ofEdition(ed, tc.picked); ed != tc.edition || !slices.Equal(got, tc.kept) && len(got)+len(tc.kept) > 0 {
+			t.Errorf("%q %v: %s %v", tc.asked, tc.picked, ed, got)
+		}
+	}
+	if all := ofEdition("goods", nil); slices.Contains(all, "projects") || !slices.Contains(all, "inventory") {
+		t.Errorf("a goods demo with nothing picked: %v", all)
+	}
+}
+
+func TestADemoGetsTheAccountingAddOnsOfItsEdition(t *testing.T) {
+	_, disabled, _, goods := selection([]string{"sales", "inventory"})
+	if !slices.Contains(goods, "accounting.goods") || slices.Contains(goods, "accounting.projectbilling") || len(disabled) != 0 {
+		t.Errorf("goods demo: features %v, disabled %v", goods, disabled)
+	}
+	_, disabled, _, services := selection([]string{"sales", "projects"})
+	if !slices.Contains(services, "accounting.projectbilling") || slices.Contains(services, "accounting.goods") || len(disabled) != 0 {
+		t.Errorf("services demo: features %v, disabled %v", services, disabled)
 	}
 }

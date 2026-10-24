@@ -1,0 +1,56 @@
+[
+  {
+    "name": "hr",
+    "editions": [
+      "services",
+      "goods"
+    ]
+  },
+  {
+    "name": "payroll",
+    "editions": [
+      "services",
+      "goods"
+    ]
+  },
+  {
+    "name": "pms",
+    "editions": [
+      "services"
+    ]
+  },
+  {
+    "name": "crm",
+    "editions": [
+      "services",
+      "goods"
+    ]
+  },
+  {
+    "name": "accounting",
+    "editions": [
+      "services",
+      "goods"
+    ],
+    "features": [
+      {
+        "name": "accounting.goods",
+        "editions": [
+          "goods"
+        ]
+      },
+      {
+        "name": "accounting.projectbilling",
+        "editions": [
+          "services"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "inventory",
+    "editions": [
+      "goods"
+    ]
+  }
+]

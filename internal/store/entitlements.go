@@ -20,8 +20,10 @@ type Installation struct {
 	SecretGeneration int       `json:"-"`
 	CreatedAt        time.Time `json:"created_at"`
 	// Version, Template and ExpiresAt describe the newest file issued; Version is 0 when there is none.
-	Version      int        `json:"version"`
-	Template     string     `json:"template"`
+	Version  int    `json:"version"`
+	Template string `json:"template"`
+	// Edition is the newest file's, services or goods; empty for a file issued before editions.
+	Edition      string     `json:"edition"`
 	ExpiresAt    *time.Time `json:"expires_at"`
 	IssuedAt     *time.Time `json:"issued_at"`
 	PendingAsks  int        `json:"pending_requests"`
@@ -45,7 +47,7 @@ type Installation struct {
 
 const installationSelect = `
 	SELECT i.id, i.name, i.kind, i.demo_id, i.lead_id, COALESCE(l.name, ''), i.notes, i.secret_generation, i.created_at,
-	       COALESCE(e.version, 0), COALESCE(e.payload->>'template', ''),
+	       COALESCE(e.version, 0), COALESCE(e.payload->>'template', ''), COALESCE(e.payload->>'edition', ''),
 	       (e.payload->>'expires_at')::timestamptz, e.issued_at,
 	       (SELECT count(*) FROM access_requests r WHERE r.installation_id = i.id AND r.status = 'pending'),
 	       COALESCE(jsonb_array_length(e.payload->'apps'), 0), COALESCE(jsonb_array_length(e.payload->'features'), 0),
@@ -59,7 +61,7 @@ const installationSelect = `
 func scanInstallation(r pgx.Row) (Installation, error) {
 	var i Installation
 	err := r.Scan(&i.ID, &i.Name, &i.Kind, &i.DemoID, &i.LeadID, &i.LeadName, &i.Notes, &i.SecretGeneration, &i.CreatedAt,
-		&i.Version, &i.Template, &i.ExpiresAt, &i.IssuedAt, &i.PendingAsks, &i.AppCount, &i.FeatureCount,
+		&i.Version, &i.Template, &i.Edition, &i.ExpiresAt, &i.IssuedAt, &i.PendingAsks, &i.AppCount, &i.FeatureCount,
 		&i.LicenseType, &i.UpdatesUntil, &i.Suspended,
 		&i.Status, &i.StatusNote, &i.StatusChangedAt, &i.ActivatedAt, &i.LastSeenAt, &i.AppliedVersion, &i.ServerVersion, &i.ServerBuild)
 	// Dates are the vendor's, not the database session's: an end date is the end of a day in UTC, and shown in another zone it

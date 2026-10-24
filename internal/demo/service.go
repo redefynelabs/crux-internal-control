@@ -45,6 +45,8 @@ type Request struct {
 	// Modules are the app groups the visitor wants to see (see ModuleGroups). The demo is built with only these; empty
 	// means everything.
 	Modules []string
+	// Edition is services or goods. Empty is goods when the visitor picked inventory without projects, else services.
+	Edition string
 	IP      string
 	// Attribution is where the visitor came from (utm_* values, referrer, landing page), kept on the lead's history.
 	Attribution map[string]string
@@ -147,6 +149,9 @@ func (r Request) Validate() error {
 			f["modules"] = "Choose from the apps listed"
 		}
 	}
+	if r.Edition != "" && r.Edition != entitle.Services && r.Edition != entitle.Goods {
+		f["edition"] = "Choose services or goods"
+	}
 	if len(f) > 0 {
 		return &ValidationError{Fields: f}
 	}
@@ -155,12 +160,39 @@ func (r Request) Validate() error {
 
 // ModuleGroups maps what the website lets a visitor pick to the catalog's onboarding groups it switches on.
 var ModuleGroups = map[string][]string{
-	"sales":     {"crm", "sales"},
+	"sales":     {"crm", "finance"},
 	"finance":   {"finance"},
 	"projects":  {"projects"},
 	"people":    {"people"},
 	"payroll":   {"payroll", "people"},
 	"inventory": {"inventory"},
+}
+
+// editionOf is the edition a demo shows: the one asked for, or goods when the visitor picked inventory and not projects.
+func editionOf(asked string, modules []string) string {
+	if asked != "" {
+		return asked
+	}
+	if slices.Contains(modules, "inventory") && !slices.Contains(modules, "projects") {
+		return entitle.Goods
+	}
+	return entitle.Services
+}
+
+// ofEdition keeps the picks that are part of the edition, so a demo never mixes the two products. A goods demo with
+// nothing picked shows everything of goods.
+func ofEdition(edition string, modules []string) []string {
+	other := "inventory"
+	if edition == entitle.Goods {
+		other = "projects"
+		if len(modules) == 0 {
+			for m := range ModuleGroups {
+				modules = append(modules, m)
+			}
+			slices.Sort(modules)
+		}
+	}
+	return slices.DeleteFunc(slices.Clone(modules), func(m string) bool { return m == other })
 }
 
 // selection turns the visitor's picks into the apps to install, the features to switch off among those apps, and the
@@ -173,12 +205,24 @@ func selection(modules []string) (installed, disabled, apps, features []string) 
 	for _, m := range modules {
 		groups = append(groups, ModuleGroups[m]...)
 	}
+	// Accounting's add-ons of the demo's edition come with Accounting.
+	edition := editionOf("", modules)
+	if slices.Contains(groups, "finance") {
+		if edition == entitle.Goods {
+			groups = append(groups, "goodsbilling")
+		} else {
+			groups = append(groups, "projectbilling")
+		}
+	}
 	apps, features = entitle.Select(groups)
 	for _, a := range entitle.Catalog.Apps {
 		if !slices.Contains(apps, a.Name) {
 			continue
 		}
 		for _, f := range a.Features {
+			if len(f.Editions) > 0 && !slices.Contains(f.Editions, edition) {
+				continue // the entitlement leaves it out; it is not part of this demo's product
+			}
 			if !slices.Contains(features, f.Name) {
 				disabled = append(disabled, f.Name)
 			}
@@ -236,6 +280,8 @@ func (s *Service) Request(ctx context.Context, r Request) (Ready, error) {
 	if err := r.Validate(); err != nil {
 		return zero, err
 	}
+	r.Edition = editionOf(r.Edition, r.Modules)
+	r.Modules = ofEdition(r.Edition, r.Modules)
 	email := strings.ToLower(strings.TrimSpace(r.Email))
 
 	s.mu.Lock()
@@ -478,7 +524,12 @@ func (s *Service) issueEntitlement(ctx context.Context, d store.Demo, lead store
 	inst, err := s.store.CreateInstallation(ctx, name, "demo", lead.ID, d.ID, "")
 	if err == nil {
 		_, _, apps, features := selection(modules)
-		err = s.entitler.ForDemo(ctx, inst.ID, s.cfg.EntitlementTemplate, expires, apps, features)
+		// The picks were narrowed to one edition; its template follows.
+		template := s.cfg.EntitlementTemplate
+		if editionOf("", modules) == entitle.Goods && len(modules) > 0 {
+			template = s.cfg.GoodsTemplate
+		}
+		err = s.entitler.ForDemo(ctx, inst.ID, template, expires, apps, features)
 	}
 	if err != nil {
 		s.log.Error("could not issue the demo's entitlement", "slug", d.Slug, "error", err)

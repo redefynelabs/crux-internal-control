@@ -14,7 +14,7 @@ import (
 	"github.com/redefynelabs/erp-control-plane/internal/store"
 )
 
-const crmSales = `"template":"agency","apps":["crm","sales"],"features":["crm.leads","sales.quotes"]`
+const crmSales = `"edition":"services","template":"agency","apps":["crm","accounting"],"features":["crm.leads","accounting.estimates"]`
 
 // signerKey reads the public key the control plane publishes.
 func signerKey(t *testing.T, h http.Handler) string {
@@ -280,9 +280,9 @@ func TestLicenceTerms(t *testing.T) {
 func TestAnAppCannotBeGrantedWithoutWhatItNeeds(t *testing.T) {
 	h, _, _ := entitlementServer(t)
 	inst := newInstallation(t, h)
-	w := do(h, "POST", "/v1/installations/"+inst.ID+"/entitlements", `{"template":"agency","apps":["accounting"],"features":["accounting.expenses"]}`, bearer()...)
-	if w.Code != 422 || !strings.Contains(w.Body.String(), "needs the sales app") {
-		t.Fatalf("accounting alone: %d %s", w.Code, w.Body)
+	w := do(h, "POST", "/v1/installations/"+inst.ID+"/entitlements", `{"edition":"services","template":"agency","apps":["payroll"],"features":[]}`, bearer()...)
+	if w.Code != 422 || !strings.Contains(w.Body.String(), "needs the hr app") {
+		t.Fatalf("payroll alone: %d %s", w.Code, w.Body)
 	}
 }
 

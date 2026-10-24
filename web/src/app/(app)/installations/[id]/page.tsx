@@ -88,6 +88,7 @@ export default async function InstallationPage({ params }: { params: Promise<{ i
               <p className="mt-3 text-sm text-muted-foreground">Nothing has been issued. The installation cannot be set up until it has a file.</p>
             ) : (
               <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                <div><dt className="text-xs text-muted-foreground">Edition</dt><dd>{current.edition ? catalog.editions.find((e) => e.key === current.edition)?.label ?? current.edition : "None (issued before editions)"}</dd></div>
                 <div><dt className="text-xs text-muted-foreground">Template</dt><dd>{template}</dd></div>
                 <div><dt className="text-xs text-muted-foreground">Issued</dt><dd>{dateTime(history[0].issued_at)}</dd></div>
                 <div><dt className="text-xs text-muted-foreground">Licence</dt><dd>{LICENCE_LABEL[current.license?.type ?? (current.expires_at ? "subscription" : "")] ?? "Not set"}</dd></div>

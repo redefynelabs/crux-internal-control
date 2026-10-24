@@ -4,7 +4,7 @@ import { AmcBadge, LICENCE_LABEL, STATE_LABEL, StateBadge } from "@/components/i
 import { Badge, ButtonLink, Card, EmptyState, PageHeader } from "@/components/ui";
 import { getAccessRequests, getInstallations, getMe } from "@/lib/api";
 import { dateOnly, relative } from "@/lib/format";
-import type { Installation, InstallationState } from "@/lib/types";
+import type { Edition, Installation, InstallationState } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export const metadata = { title: "Customers" };
@@ -121,13 +121,19 @@ export default async function InstallationsPage({ searchParams }: { searchParams
   );
 }
 
+const EDITION_LABEL: Record<Edition, string> = { services: "Services", goods: "Goods" };
+
 function Row({ i }: { i: Installation }) {
   const demo = i.kind === "demo";
   return (
     <tr className="hover:bg-muted/50">
       <td className="px-5 py-3">
         <Link href={`/installations/${i.id}`} className="font-medium hover:underline">{i.name}</Link>
-        <p className="text-xs text-muted-foreground">{i.version ? `${i.app_count} apps, ${i.feature_count} features · file v${i.version}` : "No file issued"}</p>
+        <p className="text-xs text-muted-foreground">
+          {i.version ? `${i.edition ? EDITION_LABEL[i.edition] : "No edition"} · ${i.app_count} apps, ${i.feature_count} features · file v${i.version}` : "No file issued"}
+        </p>
+        {/* A file from before editions may mix projects and inventory; the next one issued settles it. */}
+        {i.version > 0 && !i.edition && <Badge className="mt-1 bg-amber-500/15 text-amber-700 dark:text-amber-400">Issue a file with an edition</Badge>}
       </td>
       <td className="px-3 py-3"><StateBadge state={i.state} text={i.state_text} /></td>
       <td className="px-3 py-3 whitespace-nowrap text-muted-foreground">

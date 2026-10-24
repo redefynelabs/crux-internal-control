@@ -74,7 +74,7 @@ func TestIssueAndFetchEntitlement(t *testing.T) {
 	if w := asInst(h, inst, "GET", "/v1/entitlements/current", "", time.Now(), secret); w.Code != 204 {
 		t.Fatalf("nothing issued yet: %d", w.Code)
 	}
-	body := `{"template":"clinic","apps":["crm","sales"],"features":["crm.leads","sales.quotes"],"labels":{"client":{"singular":"Patient","plural":"Patients"}}}`
+	body := `{"edition":"services","template":"clinic","apps":["crm","accounting"],"features":["crm.leads","accounting.estimates"],"labels":{"client":{"singular":"Patient","plural":"Patients"}}}`
 	if w := do(h, "POST", "/v1/installations/"+inst.ID+"/entitlements", body, bearer()...); w.Code != 201 {
 		t.Fatalf("issue: %d %s", w.Code, w.Body)
 	}
@@ -99,7 +99,7 @@ func TestIssueAndFetchEntitlement(t *testing.T) {
 	}
 
 	// The next issue is version 2 and replaces the first as the current one.
-	do(h, "POST", "/v1/installations/"+inst.ID+"/entitlements", `{"template":"clinic","apps":["crm"],"features":["crm.leads"]}`, bearer()...)
+	do(h, "POST", "/v1/installations/"+inst.ID+"/entitlements", `{"edition":"services","template":"clinic","apps":["crm"],"features":["crm.leads"]}`, bearer()...)
 	var b2 entitle.Bundle
 	_ = json.Unmarshal(asInst(h, inst, "GET", "/v1/entitlements/current", "", time.Now(), secret).Body.Bytes(), &b2)
 	var p2 entitle.Payload
@@ -119,14 +119,14 @@ func TestIssueAndFetchEntitlement(t *testing.T) {
 func TestIssueRefusals(t *testing.T) {
 	h, _, _ := entitlementServer(t)
 	inst := newInstallation(t, h)
-	w := do(h, "POST", "/v1/installations/"+inst.ID+"/entitlements", `{"template":"clinic","apps":["crm"],"features":["sales.quotes"]}`, bearer()...)
+	w := do(h, "POST", "/v1/installations/"+inst.ID+"/entitlements", `{"edition":"services","template":"clinic","apps":["crm"],"features":["accounting.estimates"]}`, bearer()...)
 	if w.Code != 422 {
 		t.Fatalf("a feature without its app: %d %s", w.Code, w.Body)
 	}
-	if w := do(h, "POST", "/v1/installations/"+inst.ID+"/entitlements", `{"template":"clinic"}`); w.Code != 401 {
+	if w := do(h, "POST", "/v1/installations/"+inst.ID+"/entitlements", `{"edition":"services","template":"clinic"}`); w.Code != 401 {
 		t.Fatalf("no session: %d", w.Code)
 	}
-	if w := do(h, "POST", "/v1/installations/not-a-uuid/entitlements", `{"template":"clinic"}`, bearer()...); w.Code != 404 {
+	if w := do(h, "POST", "/v1/installations/not-a-uuid/entitlements", `{"edition":"services","template":"clinic"}`, bearer()...); w.Code != 404 {
 		t.Fatalf("bad id: %d", w.Code)
 	}
 }
@@ -135,7 +135,7 @@ func TestInstallationCallsAreAuthenticated(t *testing.T) {
 	h, _, _ := entitlementServer(t)
 	inst := newInstallation(t, h)
 	secret := entitle.Secret(secretsKey, inst.ID, 1)
-	req := `{"id":"6f1f6a4e-3a52-4f43-9b1c-5f4c2f6f9a11","kind":"feature","name":"sales.quotes","note":"please"}`
+	req := `{"id":"6f1f6a4e-3a52-4f43-9b1c-5f4c2f6f9a11","kind":"feature","name":"accounting.estimates","note":"please"}`
 
 	if w := asInst(h, inst, "POST", "/v1/access-requests", req, time.Now(), "wrong-secret"); w.Code != 401 {
 		t.Fatalf("wrong secret: %d", w.Code)
@@ -152,7 +152,7 @@ func TestInstallationCallsAreAuthenticated(t *testing.T) {
 	if w := asInst(h, inst, "POST", "/v1/access-requests", req, time.Now(), secret); w.Code != 200 {
 		t.Fatalf("a retried post must change nothing: %d", w.Code)
 	}
-	bad := `{"id":"6f1f6a4e-3a52-4f43-9b1c-5f4c2f6f9a12","kind":"app","name":"sales.quotes"}`
+	bad := `{"id":"6f1f6a4e-3a52-4f43-9b1c-5f4c2f6f9a12","kind":"app","name":"accounting.estimates"}`
 	if w := asInst(h, inst, "POST", "/v1/access-requests", bad, time.Now(), secret); w.Code != 422 {
 		t.Fatalf("an app named like a feature: %d", w.Code)
 	}
@@ -174,7 +174,7 @@ func TestApproveAndDeclineRequests(t *testing.T) {
 	inst := newInstallation(t, h)
 	secret := entitle.Secret(secretsKey, inst.ID, 1)
 	const quotes, orders = "6f1f6a4e-3a52-4f43-9b1c-5f4c2f6f9a21", "6f1f6a4e-3a52-4f43-9b1c-5f4c2f6f9a22"
-	for id, name := range map[string]string{quotes: "sales.quotes", orders: "sales.orders"} {
+	for id, name := range map[string]string{quotes: "accounting.estimates", orders: "accounting.invoices"} {
 		b, _ := json.Marshal(map[string]string{"id": id, "kind": "feature", "name": name})
 		if w := asInst(h, inst, "POST", "/v1/access-requests", string(b), time.Now(), secret); w.Code != 201 {
 			t.Fatalf("post: %d", w.Code)
@@ -188,7 +188,7 @@ func TestApproveAndDeclineRequests(t *testing.T) {
 	}
 
 	// Issue a first file granting quotes and answering that request.
-	body := `{"template":"clinic","apps":["sales"],"features":["sales.quotes"],"approve_requests":["` + quotes + `"]}`
+	body := `{"edition":"services","template":"clinic","apps":["accounting"],"features":["accounting.estimates"],"approve_requests":["` + quotes + `"]}`
 	if w := do(h, "POST", "/v1/installations/"+inst.ID+"/entitlements", body, bearer()...); w.Code != 201 {
 		t.Fatalf("issue: %d %s", w.Code, w.Body)
 	}
@@ -208,7 +208,7 @@ func TestApproveAndDeclineRequests(t *testing.T) {
 	_ = json.Unmarshal(asInst(h, inst, "GET", "/v1/entitlements/current", "", time.Now(), secret).Body.Bytes(), &b)
 	var p entitle.Payload
 	_ = json.Unmarshal(b.Payload, &p)
-	if p.Version != 2 || len(p.Declined) != 1 || p.Declined[0].Name != "sales.orders" || p.Declined[0].Note != "Not on your plan" || len(p.Features) != 1 {
+	if p.Version != 2 || len(p.Declined) != 1 || p.Declined[0].Name != "accounting.invoices" || p.Declined[0].Note != "Not on your plan" || len(p.Features) != 1 {
 		t.Fatalf("the decline travels in the next file: %+v", p)
 	}
 	if w := do(h, "POST", "/v1/installations/"+inst.ID+"/requests/"+orders+"/decline", `{"note":"again"}`, bearer()...); w.Code != 404 {
@@ -223,7 +223,8 @@ func TestADemoGetsAnEntitlement(t *testing.T) {
 		t.Fatalf("demo: %d %s", w.Code, w.Body)
 	}
 	list, err := st.ListInstallations(t.Context(), "demo")
-	if err != nil || len(list) != 1 || list[0].Version != 1 || list[0].Template != "agency" || list[0].AppCount != 6 {
+	// A demo is one edition: the services one has every app but Inventory.
+	if err != nil || len(list) != 1 || list[0].Version != 1 || list[0].Template != "agency" || list[0].Edition != "services" || list[0].AppCount != 5 {
 		t.Fatalf("the demo's installation: %+v %v", list, err)
 	}
 }

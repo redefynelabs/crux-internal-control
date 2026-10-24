@@ -142,6 +142,8 @@ type demoRequestJSON struct {
 	Focus    string `json:"focus"`
 	// Modules are the app groups the visitor wants in the demo; empty means all of them.
 	Modules []string `json:"modules"`
+	// Edition is services or goods; empty picks it from the modules.
+	Edition string `json:"edition"`
 	// Website is a honeypot: the form hides it, so only a bot fills it in.
 	Website      string            `json:"website"`
 	CaptchaToken string            `json:"captcha_token"`
@@ -174,7 +176,7 @@ func (a *API) requestDemo(w http.ResponseWriter, r *http.Request) {
 	// A demo takes several seconds to start; do not let the visitor's browser dropping the connection abandon it half way.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 3*time.Minute)
 	defer cancel()
-	ready, err := a.demos.Request(ctx, demo.Request{Name: in.Name, Email: in.Email, Phone: in.Phone, Company: in.Company, TeamSize: in.TeamSize, Focus: in.Focus, Modules: in.Modules, IP: ip, Attribution: in.Attribution})
+	ready, err := a.demos.Request(ctx, demo.Request{Name: in.Name, Email: in.Email, Phone: in.Phone, Company: in.Company, TeamSize: in.TeamSize, Focus: in.Focus, Modules: in.Modules, Edition: in.Edition, IP: ip, Attribution: in.Attribution})
 	var ve *demo.ValidationError
 	switch {
 	case errors.As(err, &ve):

@@ -16,15 +16,17 @@ var ErrNoSigner = errors.New("entitle: no signing key is configured (CP_ENTITLEM
 // Draft is what a person chooses in the editor.
 type Draft struct {
 	// License is "subscription" or "lifetime". Empty issues a file without the field, as before.
-	License         string           `json:"license"`
-	UpdatesUntil    *time.Time       `json:"updates_until"`
-	Suspended       bool             `json:"suspended"`
-	ControlPlaneURL string           `json:"control_plane_url"`
-	Template        string           `json:"template"`
-	Apps            []string         `json:"apps"`
-	Features        []string         `json:"features"`
-	Labels          map[string]Label `json:"labels"`
-	ExpiresAt       *time.Time       `json:"expires_at"`
+	License         string     `json:"license"`
+	UpdatesUntil    *time.Time `json:"updates_until"`
+	Suspended       bool       `json:"suspended"`
+	ControlPlaneURL string     `json:"control_plane_url"`
+	// Edition is services or goods; every app, feature and the template must be of it.
+	Edition   string           `json:"edition"`
+	Template  string           `json:"template"`
+	Apps      []string         `json:"apps"`
+	Features  []string         `json:"features"`
+	Labels    map[string]Label `json:"labels"`
+	ExpiresAt *time.Time       `json:"expires_at"`
 }
 
 // Issuer signs entitlements for installations and keeps them.
@@ -59,7 +61,7 @@ func (i *Issuer) Issue(ctx context.Context, installationID string, d Draft, by s
 	p := Payload{
 		Version: version, IssuedAt: i.now().Truncate(time.Second), ExpiresAt: d.ExpiresAt,
 		Customer: Customer{ID: inst.ID, Name: inst.Name},
-		Template: d.Template, Apps: d.Apps, Features: d.Features, Labels: d.Labels,
+		Template: d.Template, Edition: d.Edition, Apps: d.Apps, Features: d.Features, Labels: d.Labels,
 		UpdatesUntil: d.UpdatesUntil, Suspended: d.Suspended, ControlPlaneURL: d.ControlPlaneURL,
 	}
 	if d.License != "" {
@@ -118,10 +120,13 @@ func (i *Issuer) Reissue(ctx context.Context, installationID, by string) error {
 
 // DraftOf is the draft that would issue the payload again unchanged.
 func DraftOf(p Payload) Draft {
-	d := Draft{Template: p.Template, Apps: p.Apps, Features: p.Features, Labels: p.Labels, ExpiresAt: p.ExpiresAt,
+	d := Draft{Template: p.Template, Edition: p.Edition, Apps: p.Apps, Features: p.Features, Labels: p.Labels, ExpiresAt: p.ExpiresAt,
 		UpdatesUntil: p.UpdatesUntil, Suspended: p.Suspended, ControlPlaneURL: p.ControlPlaneURL}
 	if p.License != nil {
 		d.License = p.License.Type
+	}
+	if d.Edition == "" {
+		d.Edition = EditionOf(p.Apps, p.Template)
 	}
 	return d
 }
@@ -142,12 +147,15 @@ func (i *Issuer) Latest(ctx context.Context, installationID string) (Payload, bo
 	return p, true, nil
 }
 
-// ForDemo issues a demo's first file under the given template: the given apps and features, or every one of the catalog
-// when both are empty.
+// ForDemo issues a demo's first file in the edition of its template: the given apps and features, or every one of the
+// catalog that is part of that edition when both are empty.
 func (i *Issuer) ForDemo(ctx context.Context, installationID, template string, until time.Time, apps, features []string) error {
+	edition := EditionOf(nil, template)
 	if len(apps) == 0 && len(features) == 0 {
-		apps, features = Names()
+		all, allFeatures := Names()
+		apps = slices.DeleteFunc(all, func(a string) bool { return !InEdition(a, edition) })
+		features = slices.DeleteFunc(allFeatures, func(f string) bool { return !InEdition(f, edition) })
 	}
-	_, err := i.Issue(ctx, installationID, Draft{Template: template, Apps: apps, Features: features, ExpiresAt: &until}, "", nil)
+	_, err := i.Issue(ctx, installationID, Draft{Edition: edition, Template: template, Apps: apps, Features: features, ExpiresAt: &until}, "", nil)
 	return err
 }

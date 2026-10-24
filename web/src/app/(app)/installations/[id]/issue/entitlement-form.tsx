@@ -6,7 +6,7 @@ import type { FormState } from "@/lib/form";
 import { Field, SavedNote } from "@/components/field";
 import { SubmitButton } from "@/components/pending-button";
 import { Button, Card, Input, Select } from "@/components/ui";
-import type { AccessRequest, EntitlementCatalog, EntitlementGroup, EntitlementPayload } from "@/lib/types";
+import type { AccessRequest, Edition, EntitlementCatalog, EntitlementGroup, EntitlementPayload } from "@/lib/types";
 
 /** What a request asks for, as the apps and features to switch on: an app brings its features, a feature brings its app. */
 function grantedBy(catalog: EntitlementCatalog, r: AccessRequest) {
@@ -16,6 +16,24 @@ function grantedBy(catalog: EntitlementCatalog, r: AccessRequest) {
   }
   const app = catalog.apps.find((a) => a.features.some((f) => f.name === r.name));
   return { apps: app ? [app.name] : [], features: [r.name] };
+}
+
+/** Whether an app (or "<app>.<feature>", or a core feature) may be sold in the edition. */
+function inEdition(catalog: EntitlementCatalog, name: string, edition: Edition) {
+  // A feature may be sold in fewer editions than its app.
+  const own = catalog.apps.flatMap((a) => a.features).find((f) => f.name === name)?.editions;
+  if (own?.length) return own.includes(edition);
+  const app = catalog.apps.find((a) => a.name === name.split(".")[0]);
+  return !app || app.editions.includes(edition);
+}
+
+/** The edition of the file being replaced: its own, or for one issued before editions what its apps and template say. */
+function editionOf(catalog: EntitlementCatalog, current?: EntitlementPayload): Edition {
+  if (current?.edition) return current.edition;
+  const apps = current?.apps ?? [];
+  if (apps.includes("pms") && !apps.includes("inventory")) return "services";
+  if (apps.includes("inventory") && !apps.includes("pms")) return "goods";
+  return catalog.templates.find((t) => t.id === current?.template)?.edition ?? "services";
 }
 
 export function EntitlementForm({ installationId, catalog, current, requests, preApprove }: {
@@ -28,6 +46,10 @@ export function EntitlementForm({ installationId, catalog, current, requests, pr
   const defaults = Object.fromEntries(catalog.records.map((r) => [r.key, { singular: r.singular, plural: r.plural }]));
   const [state, action] = useActionState<FormState, FormData>(issueEntitlement.bind(null, installationId, defaults), {});
   const f = state.fields ?? {};
+
+  // The edition comes first: everything below offers only what is part of it.
+  const [edition, setEdition] = useState<Edition>(() => editionOf(catalog, current));
+  const fits = (name: string) => inEdition(catalog, name, edition);
 
   const [approve, setApprove] = useState<string[]>(preApprove.filter((id) => requests.some((r) => r.id === id)));
   const [apps, setApps] = useState<Set<string>>(() => {
@@ -98,18 +120,43 @@ export function EntitlementForm({ installationId, catalog, current, requests, pr
 
   const [words, setWords] = useState<Record<string, { singular: string; plural: string }>>(() =>
     Object.fromEntries(catalog.records.map((r) => [r.key, current?.labels?.[r.key] ?? { singular: r.singular, plural: r.plural }])));
-  const [templateId, setTemplateId] = useState(current?.template ?? catalog.templates[0]?.id ?? "");
+  const [templateId, setTemplateId] = useState(current?.template ?? catalog.templates.find((t) => t.edition === edition)?.id ?? "");
   const template = catalog.templates.find((t) => t.id === templateId);
+  const templates = catalog.templates.filter((t) => t.edition === edition);
+  // Changing edition drops what belongs to the other one and starts from a template of the new one.
+  const chooseEdition = (next: Edition) => {
+    setEdition(next);
+    setApps((p) => new Set([...p].filter((a) => inEdition(catalog, a, next))));
+    setFeatures((p) => new Set([...p].filter((x) => inEdition(catalog, x, next))));
+    if (template?.edition !== next) setTemplateId(catalog.templates.find((t) => t.edition === next)?.id ?? "");
+  };
   // The industry's apps, features and words replace what is chosen. Features the ERP does not have yet are left out.
   const useTemplate = () => {
     if (!template) return;
     const known = new Set([...catalog.core.map((c) => c.name), ...catalog.apps.flatMap((a) => [a.name, ...a.features.map((x) => x.name)])]);
-    setApps(new Set(template.apps.filter((a) => known.has(a))));
-    setFeatures(new Set(template.features.filter((x) => known.has(x))));
+    setApps(new Set(template.apps.filter((a) => known.has(a) && fits(a))));
+    setFeatures(new Set(template.features.filter((x) => known.has(x) && fits(x))));
     setWords(Object.fromEntries(catalog.records.map((r) => [r.key, template.labels[r.key] ?? { singular: r.singular, plural: r.plural }])));
   };
   return (
     <form action={action} className="space-y-4">
+      <Card className="p-5">
+        <h2 className="font-medium">Edition</h2>
+        <p className="mt-1 text-xs text-muted-foreground">A customer has one product. Apps of the other are not offered and the installation refuses them.</p>
+        {f.edition && <p role="alert" className="mt-2 text-sm text-destructive">{f.edition}</p>}
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {catalog.editions.map((e) => (
+            <label key={e.key} className="flex cursor-pointer items-start gap-2.5 rounded-xl border p-3 has-[:checked]:border-primary/60 has-[:checked]:bg-primary/5">
+              <input type="radio" name="edition" value={e.key} checked={edition === e.key} onChange={() => chooseEdition(e.key)} className="mt-1 size-4" />
+              <span className="text-sm">
+                <span className="font-medium">{e.label}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">{e.text}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </Card>
+
       {requests.length > 0 && (
         <Card className="p-5">
           <h2 className="font-medium">Requests this file answers</h2>
@@ -130,7 +177,7 @@ export function EntitlementForm({ installationId, catalog, current, requests, pr
       <Card className="grid gap-4 p-5 sm:grid-cols-2">
         <Field id="template" label="Template" error={f.template} hint="Fields, statuses and pipelines the first administrator starts with. Applied once.">
           <Select id="template" name="template" value={templateId} onChange={(e) => setTemplateId(e.target.value)} required>
-            {catalog.templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
           </Select>
           {template && <p className="mt-1.5 text-xs text-muted-foreground">{template.summary}</p>}
           <Button type="button" variant="secondary" size="sm" className="mt-2" onClick={useTemplate}>Use this template&apos;s apps, features and words</Button>
@@ -155,7 +202,7 @@ export function EntitlementForm({ installationId, catalog, current, requests, pr
         <h2 className="font-medium">What the business needs</h2>
         <p className="mt-1 text-xs text-muted-foreground">Tick the outcomes this customer is paying for. The apps and features behind them are switched on below, where you can still fine-tune.</p>
         <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-          {catalog.groups.map((g) => (
+          {catalog.groups.filter((g) => g.apps.every(fits) && g.features.every(fits)).map((g) => (
             <GroupRow key={g.key} group={g} state={groupState(g)} onChange={(on) => toggleGroup(g, on)} />
           ))}
         </ul>
@@ -174,7 +221,7 @@ export function EntitlementForm({ installationId, catalog, current, requests, pr
               </label>
             ))}
           </fieldset>
-          {catalog.apps.map((app) => (
+          {catalog.apps.filter((app) => fits(app.name)).map((app) => (
             <fieldset key={app.name} className="rounded-xl border p-4">
               <legend className="px-1">
                 <label className="flex items-center gap-2 text-sm font-medium">

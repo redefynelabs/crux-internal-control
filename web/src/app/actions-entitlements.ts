@@ -37,6 +37,7 @@ export async function issueEntitlement(id: string, defaults: Record<string, { si
     await api(`/v1/installations/${encodeURIComponent(id)}/entitlements`, {
       method: "POST",
       body: {
+        edition: str(form, "edition"),
         template: str(form, "template"),
         apps: form.getAll("apps").map(String),
         features: form.getAll("features").map(String),

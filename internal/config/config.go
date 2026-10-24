@@ -91,8 +91,10 @@ type Demo struct {
 	Entrypoint   string
 	CertResolver string
 
-	// EntitlementTemplate is the industry template named in the entitlement each demo is given.
+	// EntitlementTemplate is the industry template named in the entitlement each services demo is given, GoodsTemplate
+	// the one a goods demo is given.
 	EntitlementTemplate string
+	GoodsTemplate       string
 
 	// AIProvider, AIModel and AIKey let visitors try Mei in a demo with our own AI key (passed to the demo server as
 	// DEMO_AI_*). AIMaxQuestions is how many questions one demo may ask. Empty key: Mei is not usable in demos.
@@ -190,6 +192,7 @@ func load(lookup func(string) (string, bool)) (*Config, error) {
 		Template: get("CP_DEMO_TEMPLATE", "erp_demo_seed"), RedisURL: need("CP_REDIS_URL"), DataNetwork: get("CP_DATA_NETWORK", "erp-data"),
 		ProxyNetwork: get("CP_PROXY_NETWORK", "erp-proxy"), Entrypoint: get("CP_TRAEFIK_ENTRYPOINT", "websecure"), CertResolver: certResolver(get("CP_TRAEFIK_CERT_RESOLVER", "letsencrypt")),
 		EntitlementTemplate: get("CP_DEMO_ENTITLEMENT_TEMPLATE", "agency"),
+		GoodsTemplate:       get("CP_DEMO_GOODS_TEMPLATE", "wholesale"),
 		AIProvider:          get("CP_DEMO_AI_PROVIDER", ""), AIModel: get("CP_DEMO_AI_MODEL", ""), AIKey: get("CP_DEMO_AI_API_KEY", ""), AIMaxQuestions: num("CP_DEMO_AI_MAX_QUESTIONS", 15),
 	}
 	if c.Demo.AIKey != "" && (c.Demo.AIProvider == "" || c.Demo.AIModel == "") {
